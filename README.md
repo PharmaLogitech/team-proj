@@ -27,7 +27,7 @@ React (Frontend)  →  Spring Boot (Backend API)  →  MySQL (Database)
 | Layer    | Technology           | Version / notes      |
 |----------|----------------------|----------------------|
 | Frontend | React (Vite, JS)     | Node 20+ required    |
-| Backend  | Spring Boot          | 3.4.x, Java 17 or 23 |
+| Backend  | Spring Boot          | 3.4.x, Java 23       |
 | Database | MySQL                | 8.x+                 |
 | Build    | Maven                | 3.9+ or use `mvnw`   |
 
@@ -39,15 +39,15 @@ Install the following **before** running the app:
 
 | Tool      | Purpose                          | Where to get it |
 |-----------|-----------------------------------|-----------------|
-| **Java 17 or 23** | Backend runs on JVM; Maven compiles with it | [Oracle](https://www.oracle.com/java/technologies/downloads/) or [Eclipse Temurin](https://adoptium.net/) |
+| **Java 23**       | Backend runs on JVM; Maven compiles with it | [Oracle](https://www.oracle.com/java/technologies/downloads/) or [Eclipse Temurin](https://adoptium.net/) |
 | **Node.js 20+**   | Frontend build and dev server     | [nodejs.org](https://nodejs.org/) (LTS) or `winget install OpenJS.NodeJS.LTS` |
 | **MySQL 8+**      | Database for users, products, orders | [MySQL](https://dev.mysql.com/downloads/) or a packaged install (e.g. XAMPP) |
 | **Maven 3.9+**    | Build and run backend             | [Maven](https://maven.apache.org/download.cgi) or use the `mvnw` wrapper in `backend/` |
 
-- **Java:** If you use Java 23, set `java.version` in `backend/pom.xml` to `23` and ensure `JAVA_HOME` points to JDK 23. If you use Java 17, set it to `17` (or leave as in the project).
 - **Node:** Vite 6 needs Node 18+ (Node 20 LTS recommended). On Windows, if `npm` scripts are blocked, run:  
   `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
 
+- **Java:** If you have any issues surrounding java just let me know on whatsapp
 ---
 
 ## Full Setup Guide
