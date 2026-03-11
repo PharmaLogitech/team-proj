@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+╔══════════════════════════════════════════════════════════════════════╗
+║  WHAT: This is the Maven build file (pom.xml) for the backend.     ║
+║                                                                      ║
+║  WHY:  Maven reads this file to know:                                ║
+║        1. Which Java version to compile with (23).                   ║
+║        2. Which libraries (dependencies) the project needs.          ║
+║        3. How to package and run the application.                    ║
+║                                                                      ║
+║  HOW TO EXTEND:                                                      ║
+║        To add a new library, find it on https://mvnrepository.com,   ║
+║        then add a <dependency> block inside <dependencies>.          ║
+╚══════════════════════════════════════════════════════════════════════╝
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        The "parent" block inherits sensible defaults from Spring Boot's
+        starter parent. This saves us from manually configuring dozens of
+        plugin versions, dependency management entries, etc.
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.3</version>
+        <relativePath/>
+    </parent>
+
+    <!-- Our project coordinates — a unique identifier in the Maven world. -->
+    <groupId>com.ipos</groupId>
+    <artifactId>ipos-sa-backend</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>IPOS-SA Backend</name>
+    <description>Phase 1 Core MVP — Pharmaceutical Stock and Order Management</description>
+
+    <properties>
+        <!-- Compile everything with Java 23. -->
+        <java.version>23</java.version>
+    </properties>
+
+    <dependencies>
+        <!--
+            spring-boot-starter-web
+            Brings in: Spring MVC, embedded Tomcat, JSON serialization (Jackson).
+            This is what lets us create @RestController endpoints that return JSON.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!--
+            spring-boot-starter-data-jpa
+            Brings in: Hibernate (the ORM), Spring Data JPA (magic repositories).
+            This lets us map Java classes to database tables with annotations
+            like @Entity, and get free CRUD methods from JpaRepository.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!--
+            mysql-connector-j
+            The JDBC driver that lets Java talk to a MySQL database.
+            Without this, Spring Boot cannot open a connection to MySQL.
+        -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                The Spring Boot Maven plugin lets us run the app with:
+                    ./mvnw spring-boot:run
+                and also packages a fat JAR with all dependencies included.
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

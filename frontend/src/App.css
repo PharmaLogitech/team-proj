@@ -1,0 +1,276 @@
+/*
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║  WHAT: Global stylesheet for the IPOS-SA frontend.                          ║
+ * ║                                                                              ║
+ * ║  WHY:  Provides a clean, readable layout for the learning project.          ║
+ * ║        Uses simple CSS — no frameworks — so the styles are easy to          ║
+ * ║        understand and modify.                                                ║
+ * ║                                                                              ║
+ * ║  HOW TO EXTEND:                                                              ║
+ * ║        - Add component-specific CSS files (Catalogue.css, etc.).            ║
+ * ║        - Switch to CSS Modules or Tailwind for scoped/utility styles.       ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ */
+
+/* ── Reset & Base ────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background-color: #f0f2f5;
+  color: #1a1a2e;
+  line-height: 1.6;
+}
+
+/* ── App Layout ──────────────────────────────────────────────────────────── */
+
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.app-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.app-header h1 {
+  font-size: 2.25rem;
+  color: #16213e;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  color: #6b7280;
+  font-size: 1rem;
+  margin-top: 0.25rem;
+}
+
+/* ── Navigation ──────────────────────────────────────────────────────────── */
+
+.app-nav {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.app-nav button {
+  padding: 0.6rem 1.6rem;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+  color: #374151;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.app-nav button:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.app-nav button.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: white;
+}
+
+/* ── Logged-in user & Log out ────────────────────────────────────────────── */
+
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.current-user {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.logout-btn {
+  padding: 0.4rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  color: #374151;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+/* ── Login Page ───────────────────────────────────────────────────────────── */
+
+.login-page {
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.login-page h2 {
+  margin-bottom: 0.5rem;
+}
+
+.login-hint {
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin-bottom: 1.5rem;
+}
+
+.login-page .form-group {
+  margin-bottom: 1rem;
+}
+
+.login-page .submit-btn {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+/* ── Main Content ────────────────────────────────────────────────────────── */
+
+.app-main {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.app-main h2 {
+  font-size: 1.5rem;
+  color: #16213e;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid #f0f2f5;
+}
+
+/* ── Data Table ──────────────────────────────────────────────────────────── */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.data-table th {
+  background: #f8fafc;
+  color: #6b7280;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.data-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.data-table td:nth-child(3) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Order Form ──────────────────────────────────────────────────────────── */
+
+.order-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.form-group select,
+.form-group input {
+  padding: 0.65rem 0.85rem;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  color: #1a1a2e;
+  background: white;
+  transition: border-color 0.2s ease;
+}
+
+.form-group select:focus,
+.form-group input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+/* ── Submit Button ───────────────────────────────────────────────────────── */
+
+.submit-btn {
+  padding: 0.75rem 1.5rem;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  margin-top: 0.5rem;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.submit-btn:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
+}
+
+/* ── Status Messages ─────────────────────────────────────────────────────── */
+
+.status-message {
+  padding: 0.85rem 1.1rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.status-message.error {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.status-message.success {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}

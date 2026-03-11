@@ -1,0 +1,32 @@
+# Backend (Maven / Java)
+backend/target/
+backend/*.class
+backend/*.jar
+backend/*.war
+backend/.mvn/wrapper/maven-wrapper.jar
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Environment and secrets (never commit passwords)
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE and OS
+.idea/
+.cursor/
+*.iml
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
