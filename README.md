@@ -1,6 +1,6 @@
 # IPOS-SA — Pharmaceutical Stock & Order Management
 
-A learning project for **Spring Boot (Java)**, **React (Vite)**, and **MySQL**. Phase 1 is a minimal MVP: users, product catalogue, and orders with stock reduction.
+A **Spring Boot (Java)**, **React (Vite)**, and **MySQL**.
 
 ```
 React (Frontend)  →  Spring Boot (Backend API)  →  MySQL (Database)
@@ -308,7 +308,7 @@ team-proj/
 
 ---
 
-## Database Schema
+## Database Design
 
 Tables are created automatically by Hibernate on first run.
 
@@ -375,7 +375,7 @@ Tables are created automatically by Hibernate on first run.
 
 ---
 
-## Learning
+## Prerequisite knowledge needed
 
 - React: components, `useState`, `useEffect`, fetching data, controlled forms, conditional rendering, Context API.
 - Spring Boot: `@RestController`, `@Service`, `@Repository`, `@Transactional`, request/response flow.
