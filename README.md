@@ -176,17 +176,19 @@ Simply start the backend, open the frontend, and log in with one of these creden
 
 ### Creating Additional Users (Admin only)
 
-Only **ADMIN** users can create new accounts. Log in as `admin` first, then use the API:
+Only **ADMIN** users can create new accounts.
 
-**PowerShell:**
+**Merchant accounts** must be created via the **Accounts** page in the UI (or `POST /api/merchant-accounts`), which requires contact details, credit limit, and discount plan. This enforces the brief requirement: "if the required details are not provided the account will not be created."
+
+**Staff accounts** (ADMIN, MANAGER) can be created via `POST /api/users`. Attempting to create a MERCHANT via this endpoint will be rejected — use the merchant account endpoint instead.
+
+**PowerShell example (merchant account):**
 
 ```powershell
-# First, log in as admin to get a session cookie
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"admin123"}' -WebSession $session
 
-# Then create a new user (using the session)
-Invoke-RestMethod -Uri "http://localhost:8080/api/users" -Method Post -ContentType "application/json" -Body '{"name":"New Merchant","username":"newmerchant","password":"pass123","role":"MERCHANT"}' -WebSession $session
+Invoke-RestMethod -Uri "http://localhost:8080/api/merchant-accounts" -Method Post -ContentType "application/json" -Body '{"name":"Alice Pharma","username":"alice","password":"pass123","contactEmail":"alice@pharma.co","contactPhone":"07700 900001","addressLine":"2 High St, London","creditLimit":5000,"planType":"FIXED","fixedDiscountPercent":3}' -WebSession $session
 ```
 
 ### Security Notes
@@ -251,19 +253,35 @@ team-proj/
 │       │   ├── IposApplication.java
 │       │   ├── config/
 │       │   │   ├── WebConfig.java
-│       │   │   └── DataBootstrap.java   # Seeds default users on first run
+│       │   │   └── DataBootstrap.java   # Seeds default users + merchant profile
 │       │   ├── security/
 │       │   │   ├── SecurityConfig.java  # RBAC rules, CSRF, CORS, session config
 │       │   │   └── IposUserDetailsService.java  # Loads users for Spring Security
 │       │   ├── dto/
 │       │   │   ├── LoginRequest.java
-│       │   │   └── UserResponse.java    # Safe DTO (no password hash)
-│       │   ├── entity/                  # User, Product, Order, OrderItem
+│       │   │   ├── UserResponse.java    # Safe DTO (no password hash)
+│       │   │   ├── CreateMerchantAccountRequest.java  # ACC-US1
+│       │   │   ├── MerchantProfileResponse.java       # Profile DTO
+│       │   │   ├── UpdateMerchantProfileRequest.java   # ACC-US6
+│       │   │   └── CloseMonthRequest.java              # Flexible settlement
+│       │   ├── entity/
+│       │   │   ├── User.java
+│       │   │   ├── Product.java
+│       │   │   ├── Order.java           # Extended: pricing, discounts, totalDue
+│       │   │   ├── OrderItem.java       # Extended: unitPriceAtOrder
+│       │   │   ├── MerchantProfile.java # ACC-US1: contact, credit, discount, standing
+│       │   │   └── MonthlyRebateSettlement.java  # Flexible month-close records
 │       │   ├── repository/
 │       │   ├── service/
+│       │   │   ├── UserService.java
+│       │   │   ├── ProductService.java
+│       │   │   ├── OrderService.java    # Discount + credit limit + standing logic
+│       │   │   └── MerchantAccountService.java  # Account creation + month-close
 │       │   └── controller/
-│       │       ├── AuthController.java  # Login, logout, session check
-│       │       ├── UserController.java  # User CRUD (admin only)
+│       │       ├── AuthController.java
+│       │       ├── UserController.java  # Staff CRUD (admin only)
+│       │       ├── MerchantAccountController.java   # POST create (admin only)
+│       │       ├── MerchantProfileController.java   # GET/PUT + close-month
 │       │       ├── ProductController.java
 │       │       └── OrderController.java
 │       └── resources/
@@ -279,12 +297,13 @@ team-proj/
         ├── api.js                     # Centralized API calls (with auth)
         ├── Login.jsx                  # Username + password login form
         ├── Catalogue.jsx
-        ├── OrderForm.jsx
+        ├── OrderForm.jsx              # Extended: shows discount breakdown
         ├── ReportingPlaceholder.jsx   # Stub for IPOS-SA-RPRT
-        ├── AccountsPlaceholder.jsx    # Stub for IPOS-SA-ACC
+        ├── MerchantCreate.jsx         # Admin: create merchant accounts (ACC-US1)
+        ├── MerchantManagement.jsx     # Manager+Admin: profiles, standing, month-close
         └── auth/
             ├── AuthContext.jsx        # Auth state, login/logout, CSRF, session
-            └── rbac.js                # Role x package access matrix
+            └── rbac.js                # Role x package access matrix (+ MER package)
 ```
 
 ---
@@ -302,24 +321,56 @@ Tables are created automatically by Hibernate on first run.
 │ username     │       │ price        │
 │ password_hash│       │ availability │
 │ role         │       │   _count     │
-└──────────────┘       └──────┬───────┘
-      │                       │
-      │  ┌────────────┐       │
-      └──│   orders   │       │
-         ├────────────┤       │
-         │ id (PK)    │       │
-         │ merchant_id│──→ (FK to users)
-         │ status     │       │
-         └─────┬──────┘       │
-               │               │
-         ┌─────┴────────┐      │
-         │ order_items  │      │
-         ├──────────────┤      │
-         │ id (PK)      │      │
-         │ order_id (FK)│──┘
-         │ product_id   │──→ (FK to products)
-         │ quantity     │
-         └──────────────┘
+└──────┬───────┘       └──────┬───────┘
+       │                      │
+       │  ┌────────────────────────────┐
+       ├──│     merchant_profiles      │
+       │  ├────────────────────────────┤
+       │  │ id (PK)                    │
+       │  │ user_id (FK, unique)       │──→ (FK to users)
+       │  │ contact_email, phone, addr │
+       │  │ credit_limit               │
+       │  │ discount_plan_type         │
+       │  │ fixed_discount_percent     │
+       │  │ flexible_tiers_json        │
+       │  │ standing                   │
+       │  │ flexible_discount_credit   │
+       │  │ cheque_rebate_pending      │
+       │  └────────────────────────────┘
+       │
+       │  ┌──────────────────────────┐
+       ├──│         orders           │
+       │  ├──────────────────────────┤
+       │  │ id (PK)                  │
+       │  │ merchant_id (FK)         │──→ (FK to users)
+       │  │ status                   │
+       │  │ placed_at                │
+       │  │ gross_total              │
+       │  │ fixed_discount_amount    │
+       │  │ flexible_credit_applied  │
+       │  │ total_due                │
+       │  └──────────┬───────────────┘
+       │             │
+       │  ┌──────────┴───────────┐
+       │  │     order_items      │
+       │  ├──────────────────────┤
+       │  │ id (PK)              │
+       │  │ order_id (FK)        │──→ (FK to orders)
+       │  │ product_id (FK)      │──→ (FK to products)
+       │  │ quantity             │
+       │  │ unit_price_at_order  │
+       │  └──────────────────────┘
+       │
+       │  ┌──────────────────────────────────┐
+       └──│  monthly_rebate_settlements      │
+          ├──────────────────────────────────┤
+          │ id (PK)                          │
+          │ merchant_id (FK)                 │──→ (FK to users)
+          │ settlement_year_month (UK with merchant_id) │
+          │ computed_discount                │
+          │ mode                             │
+          │ settled_at                       │
+          └──────────────────────────────────┘
 ```
 
 ---

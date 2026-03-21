@@ -94,6 +94,22 @@ public class UserService {
             throw new RuntimeException("Password is required.");
         }
 
+        /*
+         * ACC-US1 guard: Merchant accounts MUST be created via
+         * MerchantAccountService.createMerchantAccount() so that the
+         * mandatory profile (contact details, credit limit, discount plan)
+         * is created atomically.  Using this generic method would create a
+         * User with role MERCHANT but no MerchantProfile — violating the
+         * brief: "if the required details are not provided the account
+         * will not be created."
+         */
+        if (role == User.Role.MERCHANT) {
+            throw new RuntimeException(
+                    "Merchant accounts must be created via the merchant account endpoint "
+                    + "(POST /api/merchant-accounts) which requires contact details, "
+                    + "credit limit, and discount plan.");
+        }
+
         /* Check for duplicate username before hitting the DB constraint. */
         if (userRepository.findByUsername(username).isPresent()) {
             throw new RuntimeException("Username '" + username + "' is already taken.");

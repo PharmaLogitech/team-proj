@@ -18,16 +18,17 @@
  * ║        │ IPOS-SA-CAT │ Electronic Catalogue & Inventory Control    │        ║
  * ║        │ IPOS-SA-ORD │ Order Fulfillment & Financial Tracking      │        ║
  * ║        │ IPOS-SA-RPRT│ Operational & Financial Reporting           │        ║
+ * ║        │ IPOS-SA-MER │ Merchant Profile Management (ACC-US6)      │        ║
  * ║        └─────────────┴──────────────────────────────────────────────┘        ║
  * ║                                                                              ║
- * ║  ROLE × PACKAGE MATRIX (ACC-US4 acceptance criteria):                        ║
- * ║        ┌───────────┬─────┬─────┬─────┬──────┐                               ║
- * ║        │ Role      │ ACC │ CAT │ ORD │ RPRT │                               ║
- * ║        ├───────────┼─────┼─────┼─────┼──────┤                               ║
- * ║        │ MERCHANT  │  ✗  │  ✓  │  ✓  │  ✗   │                               ║
- * ║        │ MANAGER   │  ✗  │  ✓  │  ✓  │  ✓   │                               ║
- * ║        │ ADMIN     │  ✓  │  ✓  │  ✓  │  ✓   │                               ║
- * ║        └───────────┴─────┴─────┴─────┴──────┘                               ║
+ * ║  ROLE × PACKAGE MATRIX (ACC-US4 + brief §iii):                               ║
+ * ║        ┌───────────┬─────┬─────┬─────┬──────┬─────┐                         ║
+ * ║        │ Role      │ ACC │ CAT │ ORD │ RPRT │ MER │                         ║
+ * ║        ├───────────┼─────┼─────┼─────┼──────┼─────┤                         ║
+ * ║        │ MERCHANT  │  ✗  │  ✓  │  ✓  │  ✗   │  ✗  │                         ║
+ * ║        │ MANAGER   │  ✗  │  ✓  │  ✓  │  ✓   │  ✓  │                         ║
+ * ║        │ ADMIN     │  ✓  │  ✓  │  ✓  │  ✓   │  ✓  │                         ║
+ * ║        └───────────┴─────┴─────┴─────┴──────┴─────┘                         ║
  * ║                                                                              ║
  * ║  HOW TO ADD A NEW SCREEN (3 steps):                                          ║
  * ║        1. Add a new PACKAGE constant below (if it's a new package).         ║
@@ -54,19 +55,26 @@
  *   2. Renaming a package means changing ONE place, not every component.
  *   3. Imports make dependencies explicit and searchable.
  */
-export const PACKAGE_ACC = "IPOS-SA-ACC";   // Account Management
+export const PACKAGE_ACC = "IPOS-SA-ACC";   // Account Management (admin-only)
 export const PACKAGE_CAT = "IPOS-SA-CAT";   // Catalogue & Inventory
 export const PACKAGE_ORD = "IPOS-SA-ORD";   // Orders & Fulfillment
 export const PACKAGE_RPRT = "IPOS-SA-RPRT"; // Reporting
 
+/*
+ * PACKAGE_MER — Merchant Profile Management (brief §iii).
+ * Separate from PACKAGE_ACC because MANAGERS need access to merchant
+ * profiles (to alter credit limits, discount plans, and standing) but
+ * should NOT see the full Account Management screen (user CRUD).
+ */
+export const PACKAGE_MER = "IPOS-SA-MER";   // Merchant Profiles (manager + admin)
+
 /* ── Access Matrix ────────────────────────────────────────────────────────────
  *
  * Maps each role to the set of packages they can access.
- * This is the JavaScript equivalent of the ACC-US4 acceptance criteria.
+ * This is the JavaScript equivalent of the ACC-US4 acceptance criteria
+ * extended with the brief §iii manager capabilities.
  *
- * Using a Set for O(1) lookups.  In a system with many packages, this is
- * more efficient than array.includes(), though for 4 packages it doesn't
- * matter — we use Set for correctness of the pattern.
+ * Using a Set for O(1) lookups.
  *
  * NOTE: If a role is not in this map, they have NO access to anything.
  *       This is a fail-closed design (deny by default).
@@ -79,21 +87,19 @@ const ACCESS_MATRIX = {
   MERCHANT: new Set([PACKAGE_CAT, PACKAGE_ORD]),
 
   /*
-   * MANAGER (ACC-US4):
-   * "Manager accounts must have access to IPOS-SA-RPRT and Merchant account
-   *  settings."
-   *
-   * Managers also get CAT and ORD for oversight (they need to see catalogue
-   * and orders to manage merchants effectively, per ACC-US5/US6).
+   * MANAGER (ACC-US4 + brief §iii):
+   * Reporting access + merchant account management (credit limits,
+   * discount plans, standing transitions).
+   * Also gets CAT and ORD for oversight.
    */
-  MANAGER: new Set([PACKAGE_CAT, PACKAGE_ORD, PACKAGE_RPRT]),
+  MANAGER: new Set([PACKAGE_CAT, PACKAGE_ORD, PACKAGE_RPRT, PACKAGE_MER]),
 
   /*
    * ADMIN (ACC-US4):
-   * "Administrator accounts must have full access to all packages, including
-   *  IPOS-SA-ACC."
+   * Full access to all packages, including account management and
+   * merchant profile management.
    */
-  ADMIN: new Set([PACKAGE_ACC, PACKAGE_CAT, PACKAGE_ORD, PACKAGE_RPRT]),
+  ADMIN: new Set([PACKAGE_ACC, PACKAGE_CAT, PACKAGE_ORD, PACKAGE_RPRT, PACKAGE_MER]),
 };
 
 /* ── Route → Package Mapping ──────────────────────────────────────────────────
@@ -101,16 +107,13 @@ const ACCESS_MATRIX = {
  * Maps each frontend route/page identifier to the package it belongs to.
  * App.jsx uses this to determine whether to show a nav item and whether
  * to render the page component.
- *
- * The keys here are the "page" identifiers used by App.jsx's currentPage
- * state.  If you switch to React Router in the future, these would become
- * URL paths like "/catalogue", "/orders", etc.
  */
 const ROUTE_PACKAGES = {
   catalogue: PACKAGE_CAT,
   order: PACKAGE_ORD,
   reporting: PACKAGE_RPRT,
   accounts: PACKAGE_ACC,
+  merchants: PACKAGE_MER,
 };
 
 /*
@@ -118,13 +121,7 @@ const ROUTE_PACKAGES = {
  *
  * Checks whether a given role has access to a given package.
  *
- * @param {string} role       The user's role (e.g., "ADMIN", "MERCHANT").
- * @param {string} packageId  The package constant (e.g., PACKAGE_CAT).
- * @returns {boolean}         true if the role can access the package.
- *
- * FAIL-CLOSED: If the role is not in the ACCESS_MATRIX (e.g., a typo or
- * a new role that hasn't been configured), this returns false.
- * This is intentional — unknown roles should have NO access.
+ * FAIL-CLOSED: If the role is not in the ACCESS_MATRIX, returns false.
  */
 export function roleCanAccessPackage(role, packageId) {
   const allowedPackages = ACCESS_MATRIX[role];
@@ -136,14 +133,7 @@ export function roleCanAccessPackage(role, packageId) {
  * ── roleCanAccessRoute ───────────────────────────────────────────────────────
  *
  * Checks whether a given role can access a given frontend route/page.
- * This is a convenience wrapper that maps route → package → role check.
- *
- * @param {string} role    The user's role.
- * @param {string} route   The page identifier (e.g., "catalogue", "order").
- * @returns {boolean}      true if the role can access the route.
- *
- * If the route is not in ROUTE_PACKAGES (e.g., a new page was added but
- * not mapped), this returns false (fail-closed).
+ * Convenience wrapper: route → package → role check.
  */
 export function roleCanAccessRoute(role, route) {
   const packageId = ROUTE_PACKAGES[route];
@@ -157,12 +147,10 @@ export function roleCanAccessRoute(role, route) {
  * Returns all route identifiers that a given role can access.
  * Used by App.jsx to build the navigation menu dynamically.
  *
- * @param {string} role  The user's role.
- * @returns {string[]}   Array of route identifiers the role can access.
- *
  * Example:
  *   getAccessibleRoutes("MERCHANT")  → ["catalogue", "order"]
- *   getAccessibleRoutes("ADMIN")     → ["catalogue", "order", "reporting", "accounts"]
+ *   getAccessibleRoutes("MANAGER")   → ["catalogue", "order", "reporting", "merchants"]
+ *   getAccessibleRoutes("ADMIN")     → ["catalogue", "order", "reporting", "accounts", "merchants"]
  */
 export function getAccessibleRoutes(role) {
   return Object.keys(ROUTE_PACKAGES).filter(

@@ -17,6 +17,7 @@
 package com.ipos.entity;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -24,6 +25,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "order_items")
@@ -62,6 +64,19 @@ public class OrderItem {
     private Product product;
 
     private Integer quantity;
+
+    /*
+     * ── PRICE SNAPSHOT (ACC-US1 / brief §i — discount calculation) ───────────
+     *
+     * The product's price at the moment the order was placed.  We snapshot
+     * this because the catalogue price can change after the order exists.
+     * Without a snapshot, historical order totals would silently change
+     * whenever a product price is updated.
+     *
+     * OrderService sets this from product.getPrice() during placeOrder().
+     */
+    @Column(name = "unit_price_at_order", precision = 10, scale = 2)
+    private BigDecimal unitPriceAtOrder;
 
     public OrderItem() {
     }
@@ -103,5 +118,13 @@ public class OrderItem {
 
     public void setQuantity(Integer quantity) {
         this.quantity = quantity;
+    }
+
+    public BigDecimal getUnitPriceAtOrder() {
+        return unitPriceAtOrder;
+    }
+
+    public void setUnitPriceAtOrder(BigDecimal unitPriceAtOrder) {
+        this.unitPriceAtOrder = unitPriceAtOrder;
     }
 }

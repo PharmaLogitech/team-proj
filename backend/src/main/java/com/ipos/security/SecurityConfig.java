@@ -269,10 +269,24 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/logout", "/api/auth/me").authenticated()
 
                 /*
+                 * ── MERCHANT ACCOUNT CREATION (ACC-US1) — ADMIN only ─────────
+                 * POST /api/merchant-accounts creates a new merchant user +
+                 * profile atomically.  Only admins can onboard merchants.
+                 */
+                .requestMatchers("/api/merchant-accounts/**").hasRole("ADMIN")
+
+                /*
+                 * ── MERCHANT PROFILE MANAGEMENT (ACC-US6, brief §iii) ────────
+                 * GET/PUT /api/merchant-profiles and POST close-month.
+                 * Managers can alter credit limits, discount plans, and
+                 * standing (IN_DEFAULT → NORMAL | SUSPENDED).
+                 * Admins also have access for full system oversight.
+                 */
+                .requestMatchers("/api/merchant-profiles/**").hasAnyRole("MANAGER", "ADMIN")
+
+                /*
                  * IPOS-SA-ACC (Account Management) — ADMIN only.
-                 * This covers user CRUD: creating merchants, assigning roles.
-                 * Future: ACC-US5/US6 will add MANAGER access to specific
-                 * merchant-settings sub-routes.
+                 * This covers staff user CRUD: creating admin/manager accounts.
                  */
                 .requestMatchers("/api/users/**").hasRole("ADMIN")
 
@@ -288,7 +302,8 @@ public class SecurityConfig {
                 /*
                  * IPOS-SA-ORD (Orders) — All authenticated users.
                  * Merchants place/track orders; Admins/Managers can view.
-                 * Future: ORD-US1 will restrict merchants to their own orders.
+                 * ORD-US1 merchant isolation is enforced in OrderService
+                 * (merchants are forced to their own ID).
                  */
                 .requestMatchers("/api/orders/**").authenticated()
 

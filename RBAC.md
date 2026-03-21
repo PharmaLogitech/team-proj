@@ -1,6 +1,6 @@
 # RBAC Architecture — IPOS-SA
 
-This document describes the Role-Based Access Control (RBAC) implementation in the IPOS-SA system, covering both the backend (Spring Security) and frontend (React). It maps directly to **ACC-US4 — Role-Based Access Control** from the user stories.
+This document describes the Role-Based Access Control (RBAC) implementation in the IPOS-SA system, covering both the backend (Spring Security) and frontend (React). It maps directly to **ACC-US4 — Role-Based Access Control** from the user stories and **brief §iii** (manager capabilities).
 
 ---
 
@@ -17,12 +17,13 @@ This table is the authoritative reference for which roles can access which syste
 | Catalogue & Inventory | IPOS-SA-CAT | **Yes** (read-only) | **Yes** (read-only) | **Yes** (full CRUD) |
 | Orders & Fulfillment | IPOS-SA-ORD | **Yes** (own orders) | **Yes** (all orders) | **Yes** (all orders) |
 | Reporting | IPOS-SA-RPRT | No | **Yes** | **Yes** |
+| Merchant Profiles | IPOS-SA-MER | No | **Yes** | **Yes** |
 
 ### Notes
 
 - **Merchants** can only browse the catalogue (read-only) and place/track their own orders.
-- **Managers** have reporting access and can manage merchant account settings (ACC-US5, ACC-US6).
-- **Admins** have unrestricted access to all packages.
+- **Managers** have reporting access, can manage merchant profiles (credit limits, discount plans, standing transitions), and run month-close settlements.
+- **Admins** have unrestricted access to all packages, including merchant account creation.
 
 ---
 
@@ -81,10 +82,12 @@ A malicious site can trigger the browser to send cookies automatically, but it *
 | `/api/auth/login` | POST | Public | No session exists yet |
 | `/api/auth/logout` | POST | Authenticated | Any role |
 | `/api/auth/me` | GET | Authenticated | Session restoration |
-| `/api/users/**` | ALL | ADMIN | Account management (IPOS-SA-ACC) |
+| `/api/merchant-accounts/**` | POST | ADMIN | Merchant account creation (ACC-US1) |
+| `/api/merchant-profiles/**` | ALL | MANAGER or ADMIN | Merchant profile management (ACC-US6, brief §iii) |
+| `/api/users/**` | ALL | ADMIN | Staff user management (IPOS-SA-ACC) |
 | `/api/products/**` | GET | Authenticated | Catalogue browsing (all roles) |
 | `/api/products/**` | POST/PUT/DELETE | ADMIN | Catalogue management |
-| `/api/orders/**` | ALL | Authenticated | Order operations |
+| `/api/orders/**` | ALL | Authenticated | Order operations (ORD-US1 enforced in service) |
 | `/api/reports/**` | ALL | MANAGER or ADMIN | Reporting (IPOS-SA-RPRT) |
 
 ### Password Storage
@@ -93,6 +96,35 @@ A malicious site can trigger the browser to send cookies automatically, but it *
 - BCrypt automatically salts each hash (no separate salt column needed).
 - The `passwordHash` field is `@JsonIgnore`d and never appears in API responses.
 - The `UserResponse` DTO omits the field entirely (belt-and-suspenders).
+
+---
+
+## Merchant Account Model (ACC-US1)
+
+### MerchantProfile Entity
+
+Each MERCHANT user has a 1:1 `MerchantProfile` containing:
+
+| Field | Purpose |
+|-------|---------|
+| contactEmail, contactPhone, addressLine | Mandatory contact details |
+| creditLimit | Maximum outstanding order exposure |
+| discountPlanType | FIXED or FLEXIBLE |
+| fixedDiscountPercent | Percentage for FIXED plans (0–100) |
+| flexibleTiersJson | JSON tier array for FLEXIBLE plans |
+| standing | NORMAL, IN_DEFAULT, or SUSPENDED |
+| flexibleDiscountCredit | Accumulated credit from month-close settlements |
+| chequeRebatePending | Pending cheque payouts from month-close |
+
+### Discount Plans (brief §i)
+
+**Fixed**: A single percentage applied to every order at placement. `totalDue = grossTotal - (grossTotal * fixedDiscountPercent / 100)`.
+
+**Flexible**: Tiered percentages based on calendar-month gross spend. The rebate is computed at month-close (not per-order). Settlement disburses as credit (applied to next orders) or cheque (recorded for reporting).
+
+### Standing Transitions (brief §iii)
+
+Managers may change: `IN_DEFAULT → NORMAL` or `IN_DEFAULT → SUSPENDED`. Orders are blocked for merchants not in `NORMAL` standing.
 
 ---
 
@@ -131,7 +163,7 @@ When `ipos.bootstrap.enabled=true` in `application.properties`, the following us
 |----------|----------|------|---------|
 | `admin` | `admin123` | ADMIN | Full system access |
 | `manager` | `manager123` | MANAGER | Reporting + merchant management |
-| `merchant` | `merchant123` | MERCHANT | Catalogue browsing + orders |
+| `merchant` | `merchant123` | MERCHANT | Catalogue browsing + orders (FIXED 5%, £10k credit) |
 
 Set `ipos.bootstrap.enabled=false` in production.
 
@@ -142,9 +174,10 @@ Set `ipos.bootstrap.enabled=false` in production.
 The following user stories depend on the RBAC foundation and will extend it:
 
 ### Account Management (IPOS-SA-ACC)
-- [ ] ACC-US1: Merchant Account Creation (contact details, credit limit, discount plan, Active/Inactive status)
+- [x] ACC-US1: Merchant Account Creation (contact details, credit limit, discount plan, Active/Inactive status)
 - [ ] ACC-US2: Fixed Discount Plan Assignment
 - [ ] ACC-US3: Flexible Discount Plan Configuration
+- [x] ACC-US4: Role-Based Access Control (MERCHANT, MANAGER, ADMIN)
 - [ ] ACC-US5: Managing Defaulted Accounts (Manager-only restore, audit log)
 - [ ] ACC-US6: Managing Accounts (Manager edits credit limits and discount plans)
 
@@ -159,7 +192,7 @@ The following user stories depend on the RBAC foundation and will extend it:
 - [ ] CAT-US10: Low-Stock Reporting
 
 ### Orders & Fulfillment (IPOS-SA-ORD)
-- [ ] ORD-US1: Restrict merchants to their own orders
+- [x] ORD-US1: Restrict merchants to their own orders
 - [ ] ORD-US2: Real-time Order Tracking
 - [ ] ORD-US3: Financial Balance Oversight
 - [ ] ORD-US4: Stock reduction on "Accepted" status (not on placement)

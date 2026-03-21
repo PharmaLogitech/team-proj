@@ -7,45 +7,35 @@
  * ║        2. Fetching data on mount (products for the dropdown).              ║
  * ║        3. Building a request payload and POSTing it to the backend.         ║
  * ║        4. Handling success and error responses from the API.                ║
- * ║        5. Props — the parent passes an onOrderPlaced callback.              ║
+ * ║        5. Displaying the financial breakdown (gross, discounts, totalDue)   ║
+ * ║           after a successful order placement.                               ║
  * ║                                                                              ║
  * ║  AUTHENTICATION:                                                             ║
  * ║        The currentUser prop comes from AuthContext (via App.jsx).           ║
  * ║        Orders are placed using the logged-in user's ID as merchantId.      ║
- * ║        The old "choose a merchant" dropdown is no longer needed — the       ║
- * ║        authenticated user IS the merchant.                                  ║
+ * ║        ORD-US1: The backend forces merchantId to the caller's own ID       ║
+ * ║        for MERCHANT users — merchants cannot order for others.             ║
+ * ║                                                                              ║
+ * ║  DISCOUNT DISPLAY (brief §i):                                                ║
+ * ║        After a successful order, the component displays:                    ║
+ * ║          - Gross Total: sum of line items before discount.                  ║
+ * ║          - Fixed Discount: amount deducted (FIXED plan only).              ║
+ * ║          - Flexible Credit Applied: credit consumed (FLEXIBLE plan only).  ║
+ * ║          - Total Due: final amount owed.                                   ║
  * ║                                                                              ║
  * ║  ACCESS CONTROL (ACC-US4):                                                   ║
  * ║        This page is only accessible to roles with IPOS-SA-ORD access.      ║
- * ║        The nav guard in App.jsx + rbac.js hides the "Place Order" button   ║
- * ║        from roles that don't have order access.                             ║
+ * ║        Nav guard in App.jsx + rbac.js hides it from unauthorised roles.    ║
  * ║        Backend: /api/orders/** → authenticated (SecurityConfig.java).      ║
- * ║                                                                              ║
- * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add quantity validation (min 1, max = availabilityCount).          ║
- * ║        - Add ability to order multiple different products at once           ║
- * ║          (ORD-US1 child ticket 2).                                         ║
- * ║        - Show an order summary/confirmation before submitting.              ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 import { useState, useEffect } from "react";
 import { getProducts, placeOrder } from "./api.js";
 
-/*
- * ── PROPS ────────────────────────────────────────────────────────────────────
- *
- * onOrderPlaced — A callback function from App.jsx.  When the order
- *                 succeeds, we call this to switch back to the Catalogue
- *                 and refresh it (so stock levels update).
- *
- * currentUser   — The authenticated user { id, name, username, role }.
- *                 We use currentUser.id as the merchantId when placing orders.
- */
 function OrderForm({ onOrderPlaced, currentUser }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  /* Form state for the selected product and quantity. */
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState(1);
 
@@ -53,10 +43,9 @@ function OrderForm({ onOrderPlaced, currentUser }) {
   const [message, setMessage] = useState(null);
   const [isError, setIsError] = useState(false);
 
-  /*
-   * Load products when the component mounts.
-   * We need the product list to populate the dropdown.
-   */
+  /* Stores the order response after a successful placement. */
+  const [orderResult, setOrderResult] = useState(null);
+
   useEffect(() => {
     async function fetchData() {
       try {
@@ -74,29 +63,25 @@ function OrderForm({ onOrderPlaced, currentUser }) {
     fetchData();
   }, []);
 
-  /*
-   * ── FORM SUBMISSION ───────────────────────────────────────────────────
-   *
-   * Uses the authenticated user's ID as the merchantId.
-   * No more manual merchant selection — you order as yourself.
-   */
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     setSubmitting(true);
     setMessage(null);
+    setOrderResult(null);
 
     try {
-      await placeOrder(currentUser.id, [
+      const result = await placeOrder(currentUser.id, [
         { productId: Number(productId), quantity: Number(quantity) },
       ]);
 
+      setOrderResult(result);
       setMessage("Order placed successfully!");
       setIsError(false);
 
       setTimeout(() => {
         if (onOrderPlaced) onOrderPlaced();
-      }, 1500);
+      }, 3000);
     } catch (err) {
       setMessage(err.message);
       setIsError(true);
@@ -122,13 +107,11 @@ function OrderForm({ onOrderPlaced, currentUser }) {
     <div className="order-form">
       <h2>Place an Order</h2>
 
-      {/* Show who is placing the order (the authenticated user). */}
       <p style={{ color: "#6b7280", fontSize: "0.9rem", marginBottom: "1rem" }}>
         Ordering as: <strong>{currentUser.name}</strong> ({currentUser.role})
       </p>
 
       <form onSubmit={handleSubmit}>
-        {/* Product select — populated from the products API */}
         <div className="form-group">
           <label htmlFor="product">Product:</label>
           <select
@@ -138,14 +121,13 @@ function OrderForm({ onOrderPlaced, currentUser }) {
           >
             {products.map((product) => (
               <option key={product.id} value={product.id}>
-                {product.description} — ${Number(product.price).toFixed(2)} (
+                {product.description} — £{Number(product.price).toFixed(2)} (
                 {product.availabilityCount} in stock)
               </option>
             ))}
           </select>
         </div>
 
-        {/* Quantity input */}
         <div className="form-group">
           <label htmlFor="quantity">Quantity:</label>
           <input
@@ -166,6 +148,40 @@ function OrderForm({ onOrderPlaced, currentUser }) {
         <p className={`status-message ${isError ? "error" : "success"}`}>
           {message}
         </p>
+      )}
+
+      {/*
+       * ── Order Financial Breakdown (brief §i) ──────────────────────────
+       * Displayed after a successful order to show how discounts were applied.
+       */}
+      {orderResult && orderResult.grossTotal != null && (
+        <div className="order-breakdown">
+          <h3>Order Summary</h3>
+          <table className="data-table">
+            <tbody>
+              <tr>
+                <td>Gross Total</td>
+                <td>£{Number(orderResult.grossTotal).toFixed(2)}</td>
+              </tr>
+              {Number(orderResult.fixedDiscountAmount) > 0 && (
+                <tr>
+                  <td>Fixed Discount</td>
+                  <td>-£{Number(orderResult.fixedDiscountAmount).toFixed(2)}</td>
+                </tr>
+              )}
+              {Number(orderResult.flexibleCreditApplied) > 0 && (
+                <tr>
+                  <td>Flexible Credit Applied</td>
+                  <td>-£{Number(orderResult.flexibleCreditApplied).toFixed(2)}</td>
+                </tr>
+              )}
+              <tr className="total-row">
+                <td><strong>Total Due</strong></td>
+                <td><strong>£{Number(orderResult.totalDue).toFixed(2)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

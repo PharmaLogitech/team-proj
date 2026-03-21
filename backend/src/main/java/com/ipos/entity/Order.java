@@ -15,6 +15,7 @@ package com.ipos.entity;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -25,6 +26,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,6 +61,50 @@ public class Order {
 
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
+
+    /*
+     * ── PRICING & DISCOUNT FIELDS (ACC-US1 / brief §i) ──────────────────────
+     *
+     * These fields record the financial breakdown of every order so that
+     * totals are auditable and reproducible without recalculation.
+     *
+     * placedAt              — Timestamp of order creation.  Used by the
+     *                         month-close settlement to determine which
+     *                         orders fall within a calendar month.
+     *
+     * grossTotal            — Sum of (unitPriceAtOrder * quantity) for all
+     *                         items, BEFORE any discounts.
+     *
+     * fixedDiscountAmount   — For FIXED-plan merchants: gross * (percent/100).
+     *                         For FLEXIBLE-plan merchants: 0.
+     *
+     * flexibleCreditApplied — For FLEXIBLE-plan merchants: the portion of
+     *                         accumulated flexibleDiscountCredit consumed by
+     *                         this order (min of credit balance and gross).
+     *                         For FIXED-plan merchants: 0.
+     *
+     * totalDue              — The final amount the merchant owes:
+     *                         grossTotal - fixedDiscountAmount - flexibleCreditApplied.
+     *
+     * NOTE: Existing orders created before these columns were added will
+     *       have NULL for these fields.  That is acceptable during development
+     *       (ddl-auto=update adds nullable columns).
+     */
+
+    @Column(name = "placed_at")
+    private Instant placedAt;
+
+    @Column(name = "gross_total", precision = 12, scale = 2)
+    private BigDecimal grossTotal;
+
+    @Column(name = "fixed_discount_amount", precision = 12, scale = 2)
+    private BigDecimal fixedDiscountAmount;
+
+    @Column(name = "flexible_credit_applied", precision = 12, scale = 2)
+    private BigDecimal flexibleCreditApplied;
+
+    @Column(name = "total_due", precision = 12, scale = 2)
+    private BigDecimal totalDue;
 
     /*
      * ── ONE-TO-MANY RELATIONSHIP ─────────────────────────────────────────────
@@ -127,5 +174,45 @@ public class Order {
 
     public void setItems(List<OrderItem> items) {
         this.items = items;
+    }
+
+    public Instant getPlacedAt() {
+        return placedAt;
+    }
+
+    public void setPlacedAt(Instant placedAt) {
+        this.placedAt = placedAt;
+    }
+
+    public BigDecimal getGrossTotal() {
+        return grossTotal;
+    }
+
+    public void setGrossTotal(BigDecimal grossTotal) {
+        this.grossTotal = grossTotal;
+    }
+
+    public BigDecimal getFixedDiscountAmount() {
+        return fixedDiscountAmount;
+    }
+
+    public void setFixedDiscountAmount(BigDecimal fixedDiscountAmount) {
+        this.fixedDiscountAmount = fixedDiscountAmount;
+    }
+
+    public BigDecimal getFlexibleCreditApplied() {
+        return flexibleCreditApplied;
+    }
+
+    public void setFlexibleCreditApplied(BigDecimal flexibleCreditApplied) {
+        this.flexibleCreditApplied = flexibleCreditApplied;
+    }
+
+    public BigDecimal getTotalDue() {
+        return totalDue;
+    }
+
+    public void setTotalDue(BigDecimal totalDue) {
+        this.totalDue = totalDue;
     }
 }

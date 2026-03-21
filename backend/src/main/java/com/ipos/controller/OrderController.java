@@ -11,12 +11,17 @@
  * ║  ACCESS CONTROL (ACC-US4 — RBAC):                                           ║
  * ║        Enforced in SecurityConfig.java:                                     ║
  * ║        - /api/orders/** → Authenticated (all roles).                       ║
- * ║        Merchants place/track their own orders (ORD-US1, ORD-US2).          ║
+ * ║        Merchants place/track their own orders (ORD-US1).                   ║
  * ║        Admins and Managers can view all orders for oversight.               ║
  * ║                                                                              ║
+ * ║  ORD-US1 (merchant isolation):                                               ║
+ * ║        The controller extracts the authenticated user's ID and role from    ║
+ * ║        the Spring Security context and passes them to the service.          ║
+ * ║        If the caller is a MERCHANT, the service forces merchantId to the    ║
+ * ║        caller's own ID — merchants cannot order on behalf of others.        ║
+ * ║                                                                              ║
  * ║  FUTURE WORK:                                                                ║
- * ║        - ORD-US1: Restrict merchants to only create orders for themselves. ║
- * ║        - ORD-US2: Add GET /api/orders/mine for merchant-specific tracking. ║
+ * ║        - Add GET /api/orders/mine for merchant-specific tracking.          ║
  * ║        - Add @PutMapping("/{id}/status") to update order status.           ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
@@ -25,8 +30,12 @@ package com.ipos.controller;
 import com.ipos.entity.Order;
 import com.ipos.entity.OrderItem;
 import com.ipos.entity.Product;
+import com.ipos.entity.User;
+import com.ipos.repository.UserRepository;
 import com.ipos.service.OrderService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -41,9 +50,11 @@ import java.util.Map;
 public class OrderController {
 
     private final OrderService orderService;
+    private final UserRepository userRepository;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, UserRepository userRepository) {
         this.orderService = orderService;
+        this.userRepository = userRepository;
     }
 
     /* GET /api/orders → Returns all orders (with their items, thanks to cascade). */
@@ -64,19 +75,21 @@ public class OrderController {
      *   ]
      * }
      *
-     * We use Map<String, Object> + a nested OrderItemRequest record instead of
-     * accepting the Order entity directly.  Why?  Because the frontend knows
-     * product IDs, not full Product objects.  We need a simple DTO (Data
-     * Transfer Object) to bridge the gap.
-     *
-     * ResponseEntity<?>  lets us return different HTTP status codes:
-     *   200 OK — order created successfully, body = the saved Order.
-     *   400 Bad Request — something went wrong (out of stock, bad id, etc.).
+     * The authenticated user's ID and role are extracted from the security
+     * context and passed to the service for ORD-US1 enforcement.
      */
     @PostMapping
     public ResponseEntity<?> placeOrder(@RequestBody OrderRequest request) {
         try {
-            // Convert the lightweight DTOs into entity objects that the service expects.
+            /*
+             * Extract the authenticated user from the Spring Security context.
+             * This is guaranteed to exist because SecurityConfig requires
+             * authentication for /api/orders/**.
+             */
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            User caller = userRepository.findByUsername(auth.getName())
+                    .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+
             List<OrderItem> items = request.items().stream().map(itemReq -> {
                 Product product = new Product();
                 product.setId(itemReq.productId());
@@ -87,30 +100,14 @@ public class OrderController {
                 return item;
             }).toList();
 
-            Order savedOrder = orderService.placeOrder(request.merchantId(), items);
+            Order savedOrder = orderService.placeOrder(
+                    request.merchantId(), items, caller.getId(), caller.getRole());
             return ResponseEntity.ok(savedOrder);
 
         } catch (RuntimeException e) {
-            /*
-             * If the service throws (e.g., insufficient stock), we catch it
-             * here and return a 400 with the error message.
-             * In production you'd use @ControllerAdvice for global exception
-             * handling, but this is simpler for learning.
-             */
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
-
-    /*
-     * ── Inner DTO Records ────────────────────────────────────────────────────
-     *
-     * Java Records (introduced in Java 16) are perfect for DTOs.
-     * A record auto-generates: constructor, getters, equals, hashCode, toString.
-     * They're immutable — once created, their fields can't change.
-     *
-     * We define them as inner classes because they're only used by this
-     * controller.  In larger projects you'd put DTOs in a separate package.
-     */
 
     /* Represents the full order request from the frontend. */
     record OrderRequest(Long merchantId, List<OrderItemRequest> items) {}

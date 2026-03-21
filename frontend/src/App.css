@@ -274,3 +274,199 @@ body {
   color: #16a34a;
   border: 1px solid #bbf7d0;
 }
+
+/* ── Merchant Create Form (ACC-US1) ─────────────────────────────────────── */
+
+.merchant-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.form-section {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.form-section legend {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #374151;
+  padding: 0 0.5rem;
+}
+
+.form-section .form-group {
+  margin-top: 0.75rem;
+}
+
+/* ── Tier Editor (flexible discount plan) ────────────────────────────────── */
+
+.tier-editor {
+  margin-top: 0.75rem;
+}
+
+.tier-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.tier-row input {
+  padding: 0.5rem 0.65rem;
+  border: 2px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  width: 140px;
+}
+
+.tier-catchall {
+  display: inline-block;
+  width: 140px;
+  font-size: 0.85rem;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.tier-remove-btn {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.tier-remove-btn:hover {
+  background: #fee2e2;
+}
+
+.tier-add-btn {
+  padding: 0.4rem 1rem;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+  background: transparent;
+  color: #2563eb;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-top: 0.25rem;
+}
+
+.tier-add-btn:hover {
+  background: #eff6ff;
+}
+
+/* ── Merchant Management Table ───────────────────────────────────────────── */
+
+.standing-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.standing-normal {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.standing-in-default {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.standing-suspended {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.action-btn {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.8rem;
+  cursor: pointer;
+  margin-right: 0.3rem;
+}
+
+.action-btn.edit:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.action-btn.save {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: white;
+}
+
+.action-btn.save:hover {
+  background: #1d4ed8;
+}
+
+.action-btn.cancel:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+/* ── Month Close Section ─────────────────────────────────────────────────── */
+
+.month-close-section {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 2px solid #f0f2f5;
+}
+
+.month-close-section h3 {
+  font-size: 1.15rem;
+  color: #16213e;
+  margin-bottom: 0.5rem;
+}
+
+.month-close-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.month-close-form .form-group {
+  flex: 1;
+  min-width: 180px;
+}
+
+.month-close-form .submit-btn {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+/* ── Order Breakdown ─────────────────────────────────────────────────────── */
+
+.order-breakdown {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.order-breakdown h3 {
+  font-size: 1rem;
+  color: #374151;
+  margin-bottom: 0.75rem;
+}
+
+.order-breakdown .data-table td {
+  padding: 0.4rem 0.75rem;
+}
+
+.order-breakdown .total-row td {
+  border-top: 2px solid #d1d5db;
+  padding-top: 0.6rem;
+}
