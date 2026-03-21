@@ -13,12 +13,11 @@ React (Frontend)  →  Spring Boot (Backend API)  →  MySQL (Database)
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
 - [Full Setup Guide](#full-setup-guide)
-- [Creating Your First Users](#creating-your-first-users)
+- [Authentication & Default Users](#authentication--default-users)
 - [Running the Application](#running-the-application)
 - [Login and Where Data Is Stored](#login-and-where-data-is-stored)
 - [Project Structure](#project-structure)
 - [Database Schema](#database-schema)
-- [Publishing to GitHub](#publishing-to-github)
 
 ---
 
@@ -121,7 +120,7 @@ On first run, Spring Boot (Hibernate) will create the tables in `ipos_sa` automa
 
 4. The API is available at **http://localhost:8080** (e.g. `http://localhost:8080/api/products`).
 
-If you see **"release version 23 not supported"**, your Maven is using a JDK that doesn’t support Java 23. Either set `java.version` in `backend/pom.xml` to `17`, or install JDK 23 and set `JAVA_HOME` to it.
+If you see **"release version 23 not supported"**, your Maven is using a JDK that doesn't support Java 23. Either set `java.version` in `backend/pom.xml` to `17`, or install JDK 23 and set `JAVA_HOME` to it.
 
 If you see **"Access denied for user 'root'@'localhost'"**, the username or password in `application.properties` does not match your MySQL setup. Fix the two properties and try again.
 
@@ -147,7 +146,7 @@ If you see **"Access denied for user 'root'@'localhost'"**, the username or pass
 
 4. Open the URL shown (usually **http://localhost:5173**). The frontend will proxy `/api/*` requests to the backend.
 
-If **Node is too old** (e.g. Node 17), you’ll see errors about `node:fs/promises` or similar. Install Node 20 LTS or newer.
+If **Node is too old** (e.g. Node 17), you'll see errors about `node:fs/promises` or similar. Install Node 20 LTS or newer.
 
 On **Windows**, if you get a PowerShell error about scripts not being signed when running `npm run dev`, run:
 
@@ -159,40 +158,44 @@ Then try `npm run dev` again.
 
 ---
 
-## Creating Your First Users
+## Authentication & Default Users
 
-The app shows a **Login** screen that lists users from the database. If the list is empty, you’ll see:
+The app uses **real username + password authentication** with BCrypt password hashing and server-side sessions.
 
-> No users in the system. Create a user via the API (POST /api/users) first.
+### Default Bootstrap Users
 
-Create at least one user (and optionally one per role) before using the app.
+When `ipos.bootstrap.enabled=true` in `application.properties` (the default), the following users are created automatically on first startup if the users table is empty:
 
-### Option A: PowerShell (Windows)
+| Username | Password | Role | Access |
+|----------|----------|------|--------|
+| `admin` | `admin123` | ADMIN | Full access to all packages |
+| `manager` | `manager123` | MANAGER | Reporting + merchant settings |
+| `merchant` | `merchant123` | MERCHANT | Catalogue browsing + orders |
 
-With the **backend running** on port 8080:
+Simply start the backend, open the frontend, and log in with one of these credentials.
+
+### Creating Additional Users (Admin only)
+
+Only **ADMIN** users can create new accounts. Log in as `admin` first, then use the API:
+
+**PowerShell:**
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/api/users" -Method Post -ContentType "application/json" -Body '{"name":"Admin User","role":"ADMIN"}'
-Invoke-RestMethod -Uri "http://localhost:8080/api/users" -Method Post -ContentType "application/json" -Body '{"name":"Merchant One","role":"MERCHANT"}'
+# First, log in as admin to get a session cookie
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"admin123"}' -WebSession $session
+
+# Then create a new user (using the session)
+Invoke-RestMethod -Uri "http://localhost:8080/api/users" -Method Post -ContentType "application/json" -Body '{"name":"New Merchant","username":"newmerchant","password":"pass123","role":"MERCHANT"}' -WebSession $session
 ```
 
-### Option B: curl
+### Security Notes
 
-```bash
-curl -X POST http://localhost:8080/api/users -H "Content-Type: application/json" -d "{\"name\":\"Admin User\",\"role\":\"ADMIN\"}"
-curl -X POST http://localhost:8080/api/users -H "Content-Type: application/json" -d "{\"name\":\"Merchant One\",\"role\":\"MERCHANT\"}"
-```
-
-### Option C: Postman or Insomnia
-
-- **Method:** POST  
-- **URL:** `http://localhost:8080/api/users`  
-- **Header:** `Content-Type: application/json`  
-- **Body (raw JSON):**  
-  `{"name":"Admin User","role":"ADMIN"}`  
-  or `{"name":"Merchant One","role":"MERCHANT"}`  
-
-After creating users, refresh the frontend; the Login screen will show a dropdown of users and you can log in.
+- Passwords are stored as BCrypt hashes (never plaintext).
+- Sessions are managed via JSESSIONID cookies.
+- CSRF protection is enabled (XSRF-TOKEN cookie + X-XSRF-TOKEN header).
+- Role-based access control restricts which pages and API endpoints each role can use.
+- See `docs/RBAC.md` for the full role x package access matrix.
 
 ---
 
@@ -200,30 +203,35 @@ After creating users, refresh the frontend; the Login screen will show a dropdow
 
 1. **Start MySQL** (if not running as a service).
 2. **Start the backend:**  
-   `cd backend` → `.\mvnw.cmd spring-boot:run` (Windows) or `./mvnw spring-boot:run` (macOS/Linux).
+   `cd backend` then `.\mvnw.cmd spring-boot:run` (Windows) or `./mvnw spring-boot:run` (macOS/Linux).
 3. **Start the frontend:**  
-   `cd frontend` → `npm run dev`.
+   `cd frontend` then `npm run dev`.
 4. Open **http://localhost:5173** in your browser.
-5. On the Login screen, choose a user and click **Log in**.
-6. Use **Catalogue** to view products and **Place Order** to create orders (stock is reduced when an order is placed).
+5. On the Login screen, enter credentials (e.g., `admin` / `admin123`) and click **Log in**.
+6. Navigation items are shown based on your role. Use **Catalogue** to view products and **Place Order** to create orders.
 
-To place orders, you need products. Create them via the API if the table is empty:
+To place orders, you need products. Log in as admin and create them via the API:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -ContentType "application/json" -Body '{"description":"Sample Product","price":19.99,"availabilityCount":100}'
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"admin123"}' -WebSession $session
+Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -ContentType "application/json" -Body '{"description":"Paracetamol 500mg","price":4.99,"availabilityCount":100}' -WebSession $session
 ```
 
 ---
 
 ## Login and Where Data Is Stored
 
-- **Phase 1 has no passwords.** The Login screen simply lets you “choose who you are” from the list of users in the database.
+- **Authentication:** The Login screen requires a username and password. Spring Security verifies credentials against BCrypt hashes stored in the database.
 
 - **User accounts (who can log in):**  
-  Stored in **MySQL**, in the **`users`** table. The backend exposes them via `GET /api/users` and creates them via `POST /api/users`. The Login page calls `GET /api/users` and shows them in a dropdown.
+  Stored in **MySQL**, in the **`users`** table. Each user has a `username`, `password_hash` (BCrypt), `name`, and `role` (ADMIN, MANAGER, or MERCHANT).
 
 - **Who is logged in right now:**  
-  Stored only in **React state** in the browser (`currentUser` in `App.jsx`). It is **not** saved to the database or to cookies. Refreshing the page or closing the tab clears it and shows the Login screen again.
+  Stored in a **server-side HTTP session** (JSESSIONID cookie). The session persists across page refreshes. When the React app loads, it calls `GET /api/auth/me` to restore the logged-in user. Logging out invalidates the session.
+
+- **Role-based access:**  
+  Navigation items are shown/hidden based on the user's role. Backend API endpoints are also protected. See `docs/RBAC.md` for full details.
 
 ---
 
@@ -233,31 +241,50 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 team-proj/
 ├── .gitignore
 ├── README.md
-├── backend/                        # Spring Boot
+├── docs/
+│   └── RBAC.md                      # Role x package access matrix & architecture
+├── backend/                          # Spring Boot
 │   ├── pom.xml
-│   ├── mvnw, mvnw.cmd              # Maven wrapper
+│   ├── mvnw, mvnw.cmd               # Maven wrapper
 │   └── src/main/
 │       ├── java/com/ipos/
 │       │   ├── IposApplication.java
-│       │   ├── config/WebConfig.java
-│       │   ├── entity/             # User, Product, Order, OrderItem
+│       │   ├── config/
+│       │   │   ├── WebConfig.java
+│       │   │   └── DataBootstrap.java   # Seeds default users on first run
+│       │   ├── security/
+│       │   │   ├── SecurityConfig.java  # RBAC rules, CSRF, CORS, session config
+│       │   │   └── IposUserDetailsService.java  # Loads users for Spring Security
+│       │   ├── dto/
+│       │   │   ├── LoginRequest.java
+│       │   │   └── UserResponse.java    # Safe DTO (no password hash)
+│       │   ├── entity/                  # User, Product, Order, OrderItem
 │       │   ├── repository/
 │       │   ├── service/
 │       │   └── controller/
+│       │       ├── AuthController.java  # Login, logout, session check
+│       │       ├── UserController.java  # User CRUD (admin only)
+│       │       ├── ProductController.java
+│       │       └── OrderController.java
 │       └── resources/
 │           └── application.properties
-└── frontend/                       # React + Vite
+└── frontend/                          # React + Vite
     ├── package.json
     ├── vite.config.js
     ├── index.html
     └── src/
-        ├── main.jsx
-        ├── App.jsx
+        ├── main.jsx                   # Entry point (wraps app with AuthProvider)
+        ├── App.jsx                    # Root component with RBAC navigation
         ├── App.css
-        ├── api.js
-        ├── Login.jsx
+        ├── api.js                     # Centralized API calls (with auth)
+        ├── Login.jsx                  # Username + password login form
         ├── Catalogue.jsx
-        └── OrderForm.jsx
+        ├── OrderForm.jsx
+        ├── ReportingPlaceholder.jsx   # Stub for IPOS-SA-RPRT
+        ├── AccountsPlaceholder.jsx    # Stub for IPOS-SA-ACC
+        └── auth/
+            ├── AuthContext.jsx        # Auth state, login/logout, CSRF, session
+            └── rbac.js                # Role x package access matrix
 ```
 
 ---
@@ -267,28 +294,28 @@ team-proj/
 Tables are created automatically by Hibernate on first run.
 
 ```
-┌──────────┐       ┌──────────────┐
-│  users   │       │   products   │
-├──────────┤       ├──────────────┤
-│ id (PK)  │       │ id (PK)      │
-│ name     │       │ description  │
-│ role     │       │ price        │
-└──────────┘       │ availability │
-      │            │   _count     │
-      │            └──────┬───────┘
-      │                   │
-      │  ┌────────────┐   │
-      └──│   orders   │   │
-         ├────────────┤   │
-         │ id (PK)    │   │
+┌──────────────┐       ┌──────────────┐
+│    users     │       │   products   │
+├──────────────┤       ├──────────────┤
+│ id (PK)      │       │ id (PK)      │
+│ name         │       │ description  │
+│ username     │       │ price        │
+│ password_hash│       │ availability │
+│ role         │       │   _count     │
+└──────────────┘       └──────┬───────┘
+      │                       │
+      │  ┌────────────┐       │
+      └──│   orders   │       │
+         ├────────────┤       │
+         │ id (PK)    │       │
          │ merchant_id│──→ (FK to users)
-         │ status     │   │
-         └─────┬──────┘   │
-               │           │
-         ┌─────┴────────┐  │
-         │ order_items  │  │
-         ├──────────────┤  │
-         │ id (PK)      │  │
+         │ status     │       │
+         └─────┬──────┘       │
+               │               │
+         ┌─────┴────────┐      │
+         │ order_items  │      │
+         ├──────────────┤      │
+         │ id (PK)      │      │
          │ order_id (FK)│──┘
          │ product_id   │──→ (FK to products)
          │ quantity     │
@@ -297,10 +324,11 @@ Tables are created automatically by Hibernate on first run.
 
 ---
 
-## Learning 
+## Learning
 
-- React: components, `useState`, `useEffect`, fetching data, controlled forms, conditional rendering.
+- React: components, `useState`, `useEffect`, fetching data, controlled forms, conditional rendering, Context API.
 - Spring Boot: `@RestController`, `@Service`, `@Repository`, `@Transactional`, request/response flow.
+- Spring Security: authentication, session management, CSRF protection, RBAC.
 - JPA/Hibernate: `@Entity`, `@Id`, `@ManyToOne`, `@OneToMany`, `ddl-auto`, primary and foreign keys.
 - Full stack: frontend → REST API → service → repository → MySQL.
 

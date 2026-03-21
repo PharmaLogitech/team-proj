@@ -11,14 +11,28 @@
  * ║        This separation means you can reuse the same logic from different     ║
  * ║        controllers, scheduled jobs, or message listeners.                    ║
  * ║                                                                              ║
+ * ║  AUTHENTICATION INTEGRATION:                                                 ║
+ * ║        The createUser() method hashes passwords using BCrypt before saving. ║
+ * ║        This ensures that passwords NEVER touch the database in plaintext.   ║
+ * ║                                                                              ║
+ * ║  ACCESS CONTROL (ACC-US4):                                                   ║
+ * ║        The UserController restricts all endpoints to ADMIN only.  This      ║
+ * ║        service does NOT enforce role checks — that's the controller's job   ║
+ * ║        (via SecurityConfig URL rules).  The service handles business logic  ║
+ * ║        like validation and password hashing.                                ║
+ * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
- * ║        Add methods like findByRole(Role role) and call the repository.      ║
+ * ║        - ACC-US1: Add createMerchantAccount() with contact details,         ║
+ * ║          credit limit, discount plan, and Active/Inactive status logic.     ║
+ * ║        - ACC-US5: Add restoreFromDefault() for Manager-only status changes. ║
+ * ║        - ACC-US6: Add updateCreditLimit() and updateDiscountPlan().         ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.service;
 
 import com.ipos.entity.User;
 import com.ipos.repository.UserRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -36,21 +50,69 @@ import java.util.List;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     /*
      * Constructor injection — Spring sees that this constructor needs a
-     * UserRepository and automatically provides the one it created.
-     * When there's only one constructor, @Autowired is optional (Spring
-     * infers it), but the pattern is the same.
+     * UserRepository and PasswordEncoder, and automatically provides them.
+     * The PasswordEncoder bean is defined in SecurityConfig.
      */
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public List<User> findAll() {
         return userRepository.findAll();
     }
 
+    /*
+     * ── CREATE USER ──────────────────────────────────────────────────────────
+     *
+     * Creates a new user with a BCrypt-hashed password.
+     *
+     * IMPORTANT: The "rawPassword" parameter is the plaintext password from
+     * the request body.  We hash it IMMEDIATELY and never store the raw value.
+     *
+     * VALIDATION:
+     *   - Username must not be null or empty.
+     *   - Password must not be null or empty.
+     *   - Username must be unique (enforced by DB constraint + check here).
+     *
+     * @param name        The display name (e.g., "Alice Smith").
+     * @param username    The login identifier (must be unique).
+     * @param rawPassword The plaintext password (hashed before storage).
+     * @param role        The role to assign (ADMIN, MANAGER, MERCHANT).
+     * @return            The saved User entity (with generated ID).
+     * @throws RuntimeException if the username already exists.
+     */
+    public User createUser(String name, String username, String rawPassword, User.Role role) {
+        if (username == null || username.isBlank()) {
+            throw new RuntimeException("Username is required.");
+        }
+        if (rawPassword == null || rawPassword.isBlank()) {
+            throw new RuntimeException("Password is required.");
+        }
+
+        /* Check for duplicate username before hitting the DB constraint. */
+        if (userRepository.findByUsername(username).isPresent()) {
+            throw new RuntimeException("Username '" + username + "' is already taken.");
+        }
+
+        User user = new User(
+                name,
+                username,
+                passwordEncoder.encode(rawPassword),
+                role
+        );
+
+        return userRepository.save(user);
+    }
+
+    /*
+     * Raw save — used internally (e.g., DataBootstrap) when the password
+     * is already hashed.  Controllers should use createUser() instead.
+     */
     public User save(User user) {
         return userRepository.save(user);
     }

@@ -7,6 +7,16 @@
  * ║          1. Use the React plugin (for JSX transformation & fast refresh).   ║
  * ║          2. Proxy /api requests to the Spring Boot backend at :8080.        ║
  * ║                                                                              ║
+ * ║  AUTHENTICATION NOTE:                                                        ║
+ * ║        The proxy is critical for session-based auth.  Because the browser   ║
+ * ║        talks to http://localhost:5173/api/... (same origin as the frontend),║
+ * ║        cookies (JSESSIONID, XSRF-TOKEN) are treated as same-origin and     ║
+ * ║        sent automatically.  Vite then forwards the request (with cookies)   ║
+ * ║        to http://localhost:8080.                                            ║
+ * ║                                                                              ║
+ * ║        Without the proxy, the browser would see :5173 and :8080 as         ║
+ * ║        different origins and require explicit CORS + credentials config.    ║
+ * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
  * ║        - Add aliases: resolve: { alias: { '@': '/src' } }                  ║
  * ║        - Add environment-specific configs with Vite's mode system.          ║
@@ -26,6 +36,14 @@ export default defineConfig({
      * When Vite sees a request starting with "/api", it forwards it to
      * the Spring Boot backend.  This avoids CORS issues during development
      * and makes the code cleaner (no hardcoded URLs).
+     *
+     * changeOrigin: true — Rewrites the Host header to match the target.
+     *   Without this, Spring Boot sees "Host: localhost:5173" which can
+     *   confuse some configurations.
+     *
+     * Cookies (JSESSIONID, XSRF-TOKEN) are forwarded automatically because
+     * the browser sends them to localhost:5173 (same origin), and Vite's
+     * proxy passes them through to :8080 unchanged.
      *
      * In production, you'd configure your reverse proxy (Nginx, etc.)
      * to do the same thing.

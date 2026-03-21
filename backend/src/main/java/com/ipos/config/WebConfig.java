@@ -1,44 +1,43 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Spring configuration class for CORS (Cross-Origin Resource Sharing). ║
+ * ║  WHAT: Spring MVC configuration — general web settings.                     ║
  * ║                                                                              ║
- * ║  WHY:  During development, the React frontend runs on http://localhost:5173  ║
- * ║        and the Spring Boot backend runs on http://localhost:8080.  These     ║
- * ║        are different ORIGINS (different ports = different origins).           ║
+ * ║  NOTE ON CORS:                                                               ║
+ * ║        CORS is now configured INSIDE SecurityConfig.java via Spring          ║
+ * ║        Security's CorsConfigurationSource bean.  When Spring Security is    ║
+ * ║        active, its CORS filter runs BEFORE MVC's CORS filter.  If we        ║
+ * ║        configured CORS in BOTH places, one would silently override the      ║
+ * ║        other, causing hard-to-debug failures.                               ║
  * ║                                                                              ║
- * ║        Browsers block cross-origin requests by default for security.         ║
- * ║        Without this config, every fetch() call from React to Spring Boot    ║
- * ║        would fail with a CORS error in the browser console.                 ║
- * ║                                                                              ║
- * ║        This class tells Spring: "Allow requests from localhost:5173."        ║
+ * ║        The old addCorsMappings() method has been removed to avoid this      ║
+ * ║        conflict.  All CORS settings now live in:                            ║
+ * ║          SecurityConfig.corsConfigurationSource()                           ║
  * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add more allowed origins for staging/production URLs.              ║
- * ║        - Restrict allowed methods (e.g., remove DELETE if not needed).      ║
+ * ║        Use this class for non-security MVC settings like:                   ║
+ * ║        - Custom message converters                                          ║
+ * ║        - View resolvers                                                     ║
+ * ║        - Static resource handlers                                           ║
+ * ║        - Interceptors (logging, timing)                                     ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.config;
 
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /*
  * @Configuration — Tells Spring this class contains configuration beans.
- *   Spring reads it on startup and applies the settings.
  *
  * WebMvcConfigurer — An interface that lets us customize Spring MVC behavior
- *   by overriding specific methods.  We only override addCorsMappings here.
+ *   by overriding specific methods.  Currently empty because CORS has moved
+ *   to SecurityConfig, but kept as a placeholder for future MVC customisation.
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
-
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry
-            .addMapping("/api/**")             // Apply CORS to all /api/* endpoints.
-            .allowedOrigins("http://localhost:5173")  // The Vite dev server origin.
-            .allowedMethods("GET", "POST", "PUT", "DELETE")  // HTTP methods to allow.
-            .allowedHeaders("*");              // Allow all request headers.
-    }
+    /*
+     * CORS has been moved to SecurityConfig.corsConfigurationSource().
+     * See SecurityConfig.java for the full CORS configuration and comments
+     * explaining why it must live inside the security filter chain.
+     */
 }

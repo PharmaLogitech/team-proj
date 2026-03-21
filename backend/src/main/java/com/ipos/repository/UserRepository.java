@@ -7,6 +7,12 @@
  * ║        on repositories instead.  This makes the code easier to test,         ║
  * ║        maintain, and swap databases if needed.                                ║
  * ║                                                                              ║
+ * ║  AUTHENTICATION QUERIES:                                                     ║
+ * ║        findByUsername(String) is used by IposUserDetailsService to load      ║
+ * ║        the user during Spring Security's authentication flow.  When a        ║
+ * ║        login request arrives, Spring calls loadUserByUsername(username),     ║
+ * ║        which delegates to this repository method.                            ║
+ * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
  * ║        Spring Data JPA generates SQL from method names automatically!        ║
  * ║        Just declare a method signature and Spring figures out the query:     ║
@@ -20,6 +26,8 @@ package com.ipos.repository;
 import com.ipos.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
 
 /*
  * @Repository — A specialization of @Component that tells Spring:
@@ -44,6 +52,22 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
-    // No custom methods needed for Phase 1.
-    // All CRUD operations are inherited from JpaRepository.
+
+    /*
+     * ── FIND BY USERNAME ─────────────────────────────────────────────────────
+     *
+     * Spring Data JPA auto-generates this query from the method name:
+     *   SELECT * FROM users WHERE username = ?
+     *
+     * Returns Optional<User> because the username might not exist.
+     * Optional forces the caller to handle the "not found" case explicitly
+     * instead of risking a NullPointerException.
+     *
+     * USED BY:
+     *   - IposUserDetailsService.loadUserByUsername() — for Spring Security
+     *     authentication (login flow).
+     *   - DataBootstrap — to check if a username already exists before
+     *     seeding default users.
+     */
+    Optional<User> findByUsername(String username);
 }

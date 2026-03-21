@@ -40,7 +40,7 @@
 
     <properties>
         <!-- Compile everything with Java 23. -->
-        <java.version>23</java.version>
+        <java.version>17</java.version>
     </properties>
 
     <dependencies>
@@ -63,6 +63,29 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!--
+            spring-boot-starter-security
+            Brings in: Spring Security core, filter chain, password encoders
+            (BCrypt), session management, CSRF protection, and the
+            UserDetailsService contract.
+
+            WHY WE NEED IT (ACC-US4 — Role-Based Access Control):
+            The IPOS-SA spec requires three roles (ADMIN, MANAGER, MERCHANT)
+            with different access levels.  Spring Security gives us a
+            battle-tested framework for:
+              1. Authenticating users (verifying username + password).
+              2. Authorising requests (checking roles before allowing access).
+              3. Managing HTTP sessions (so login survives page refresh).
+              4. CSRF protection (so malicious sites can't forge requests).
+
+            Without this dependency, we'd have to hand-roll all of the above,
+            which is error-prone and insecure.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
         <!--

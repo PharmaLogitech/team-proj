@@ -1,6 +1,6 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: REST Controller for Order endpoints.                                 ║
+ * ║  WHAT: REST Controller for Order endpoints (IPOS-SA-ORD).                   ║
  * ║                                                                              ║
  * ║  WHY:  This is how merchants place orders from the React frontend.           ║
  * ║        The frontend sends a JSON payload with the merchant ID and a list     ║
@@ -8,8 +8,15 @@
  * ║        payload, converts it into entity objects, and delegates to            ║
  * ║        OrderService.placeOrder() — where the real logic lives.              ║
  * ║                                                                              ║
- * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add @GetMapping("/{id}") to view a specific order.                ║
+ * ║  ACCESS CONTROL (ACC-US4 — RBAC):                                           ║
+ * ║        Enforced in SecurityConfig.java:                                     ║
+ * ║        - /api/orders/** → Authenticated (all roles).                       ║
+ * ║        Merchants place/track their own orders (ORD-US1, ORD-US2).          ║
+ * ║        Admins and Managers can view all orders for oversight.               ║
+ * ║                                                                              ║
+ * ║  FUTURE WORK:                                                                ║
+ * ║        - ORD-US1: Restrict merchants to only create orders for themselves. ║
+ * ║        - ORD-US2: Add GET /api/orders/mine for merchant-specific tracking. ║
  * ║        - Add @PutMapping("/{id}/status") to update order status.           ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */

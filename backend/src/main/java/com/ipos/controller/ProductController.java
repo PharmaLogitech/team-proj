@@ -5,9 +5,18 @@
  * ║  WHY:  The React frontend calls these endpoints to display available         ║
  * ║        products and to let admins add new products to the catalogue.         ║
  * ║                                                                              ║
+ * ║  ACCESS CONTROL (ACC-US4 — RBAC):                                           ║
+ * ║        Enforced in SecurityConfig.java (URL-level rules):                   ║
+ * ║        - GET  /api/products/** → Authenticated (all roles can read).       ║
+ * ║          Merchants see catalogue read-only (CAT-US6).                      ║
+ * ║        - POST /api/products/** → ADMIN only (CAT-US2 product creation).   ║
+ * ║        - PUT  /api/products/** → ADMIN only (CAT-US4 data maintenance).   ║
+ * ║        - DELETE /api/products/** → ADMIN only (CAT-US3 discontinuation).  ║
+ * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add @PutMapping("/{id}") to update price or stock.                ║
- * ║        - Add @GetMapping("/search?q=…") for keyword search.                ║
+ * ║        - Add @PutMapping("/{id}") to update price or stock (CAT-US4).     ║
+ * ║        - Add @DeleteMapping("/{id}") for product removal (CAT-US3).       ║
+ * ║        - Add @GetMapping("/search?q=…") for keyword search (CAT-US5/US6). ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.controller;

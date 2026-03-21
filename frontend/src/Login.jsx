@@ -1,105 +1,156 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: A simple Login page component.                                       ║
+ * ║  WHAT: Login page component with username + password authentication.        ║
  * ║                                                                              ║
- * ║  WHY:  Phase 1 has no real authentication (no passwords).  This screen       ║
- * ║        lets the user "pick who they are" from the list of users in the       ║
- * ║        database.  That identity is then passed up to App and used for        ║
- * ║        the rest of the session (e.g. placing orders as that merchant).      ║
+ * ║  WHY:  This is the ENTRY POINT for all users.  Before accessing any         ║
+ * ║        part of the IPOS-SA system, users must authenticate with valid       ║
+ * ║        credentials.  The login flow is:                                     ║
+ * ║          1. User enters username and password.                              ║
+ * ║          2. Form calls AuthContext.login() which POSTs to /api/auth/login. ║
+ * ║          3. Backend verifies credentials against BCrypt hash.              ║
+ * ║          4. On success: session cookie is set, user state is updated,      ║
+ * ║             App.jsx re-renders and shows the main application.             ║
+ * ║          5. On failure: error message is shown inline.                     ║
+ * ║                                                                              ║
+ * ║  REPLACES:                                                                   ║
+ * ║        The old Phase 1 "pick a user" dropdown.  That was for learning       ║
+ * ║        only — it had no real authentication.  This form uses proper         ║
+ * ║        server-verified credentials with BCrypt password hashing.            ║
+ * ║                                                                              ║
+ * ║  ACCESSIBILITY:                                                              ║
+ * ║        - Labels are associated with inputs via htmlFor/id.                 ║
+ * ║        - type="password" hides the password as the user types.             ║
+ * ║        - autoComplete attributes help password managers fill credentials.  ║
+ * ║        - The submit button is disabled during the request to prevent        ║
+ * ║          double-submission.                                                 ║
  * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add a password field and a real login API call when you add auth.   ║
- * ║        - Add "Remember me" by storing user id in localStorage.              ║
+ * ║        - Add a "Remember me" checkbox that uses localStorage.              ║
+ * ║        - Add a "Forgot password" link when password reset is implemented.  ║
+ * ║        - Add rate-limiting feedback (e.g., "Too many attempts, wait 30s"). ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
-import { useState, useEffect } from "react";
-import { getUsers } from "./api.js";
+import { useState } from "react";
+import { useAuth } from "./auth/AuthContext.jsx";
 
-/*
- * ── PROPS ────────────────────────────────────────────────────────────────────
- *
- * onLogin: A callback function.  When the user clicks "Log in", we call
- *          onLogin(selectedUser) so the parent (App) can store the current
- *          user and switch to the main app.  This is "lifting state up" —
- *          the parent owns the "who is logged in" state.
- */
-function Login({ onLogin }) {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+function Login() {
   /*
-   * selectedId: The id of the user currently chosen in the dropdown.
-   *             We store id (number) so we can find the full user object
-   *             when the form is submitted.
+   * ── Form State ─────────────────────────────────────────────────────────
+   *
+   * username, password:  Controlled input values.  React state is the
+   *   single source of truth — the input's displayed value always matches
+   *   the state variable.
+   *
+   * submitting:  True while the login request is in flight.  Used to
+   *   disable the button and show "Logging in..." text.
    */
-  const [selectedId, setSelectedId] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   /*
-   * Fetch the list of users when this component mounts.
-   * Same pattern as Catalogue and OrderForm: useEffect + getUsers().
+   * login() and error come from AuthContext.
+   *   login(username, password) → calls POST /api/auth/login.
+   *   error → set by AuthContext if login fails (e.g., "Invalid credentials").
    */
-  useEffect(() => {
-    async function load() {
-      try {
-        const data = await getUsers();
-        setUsers(data);
-        if (data.length > 0) setSelectedId(data[0].id);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+  const { login, error } = useAuth();
 
   /*
-   * When the user clicks "Log in", find the full user object by id
-   * and pass it to the parent.  The parent will then hide Login and
-   * show the main app (Catalogue, OrderForm).
+   * ── Form Submission ────────────────────────────────────────────────────
+   *
+   * e.preventDefault() stops the browser from doing a full page reload
+   * (which is the default behavior for HTML form submission).
+   *
+   * We call login() from AuthContext, which handles:
+   *   - Sending credentials to the backend.
+   *   - Setting the user state on success.
+   *   - Setting the error message on failure.
    */
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const user = users.find((u) => u.id === Number(selectedId));
-    if (user && onLogin) onLogin(user);
+    setSubmitting(true);
+    await login(username, password);
+    setSubmitting(false);
   };
-
-  if (loading) return <p className="status-message">Loading users...</p>;
-  if (error) return <p className="status-message error">Error: {error}</p>;
-  if (users.length === 0) {
-    return (
-      <p className="status-message">
-        No users in the system. Create a user via the API (POST /api/users) first.
-      </p>
-    );
-  }
 
   return (
     <div className="login-page">
       <h2>Log in</h2>
+
       <p className="login-hint">
-        Choose your user. (Phase 1 has no password — this is for learning.)
+        Enter your credentials to access the system.
+      </p>
+
+      {/* Dev-mode help text pointing to default bootstrap credentials. */}
+      <p className="login-hint" style={{ fontSize: "0.8rem", marginTop: "0.5rem" }}>
+        Default accounts: admin/admin123, manager/manager123, merchant/merchant123
       </p>
 
       <form onSubmit={handleSubmit}>
+        {/* ── Username Field ───────────────────────────────────────────── */}
         <div className="form-group">
-          <label htmlFor="user">User:</label>
-          <select
-            id="user"
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
-          >
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} — {u.role}
-              </option>
-            ))}
-          </select>
+          <label htmlFor="username">Username:</label>
+          <input
+            id="username"
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            /*
+             * autoComplete="username" tells the browser's password manager
+             * that this field contains a username.  The password manager can
+             * then offer to auto-fill saved credentials.
+             */
+            autoComplete="username"
+            required
+            placeholder="Enter your username"
+          />
         </div>
-        <button type="submit" className="submit-btn">
-          Log in
+
+        {/* ── Password Field ───────────────────────────────────────────── */}
+        <div className="form-group">
+          <label htmlFor="password">Password:</label>
+          <input
+            id="password"
+            /*
+             * type="password" masks the input with dots/asterisks.
+             * This prevents shoulder-surfing (someone looking at the screen).
+             */
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            /*
+             * autoComplete="current-password" helps the browser's password
+             * manager distinguish between "enter existing password" vs
+             * "create new password" (which uses "new-password").
+             */
+            autoComplete="current-password"
+            required
+            placeholder="Enter your password"
+          />
+        </div>
+
+        {/* ── Submit Button ────────────────────────────────────────────── */}
+        <button
+          type="submit"
+          className="submit-btn"
+          disabled={submitting}
+        >
+          {submitting ? "Logging in..." : "Log in"}
         </button>
       </form>
+
+      {/*
+       * ── Error Message ──────────────────────────────────────────────────
+       *
+       * Shown when AuthContext.login() sets the error state.
+       * Examples: "Invalid username or password." or "Cannot reach the server."
+       *
+       * We use the existing .status-message.error CSS class for consistent
+       * styling with error messages elsewhere in the app.
+       */}
+      {error && (
+        <p className="status-message error">{error}</p>
+      )}
     </div>
   );
 }

@@ -1,58 +1,51 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: A React component for placing an order.                              ║
+ * ║  WHAT: A React component for placing an order (IPOS-SA-ORD).               ║
  * ║                                                                              ║
  * ║  WHY:  This demonstrates:                                                   ║
  * ║        1. A form with controlled inputs (value tied to state).              ║
- * ║        2. Fetching data on mount (products and users for dropdowns).        ║
+ * ║        2. Fetching data on mount (products for the dropdown).              ║
  * ║        3. Building a request payload and POSTing it to the backend.         ║
  * ║        4. Handling success and error responses from the API.                ║
  * ║        5. Props — the parent passes an onOrderPlaced callback.              ║
  * ║                                                                              ║
+ * ║  AUTHENTICATION:                                                             ║
+ * ║        The currentUser prop comes from AuthContext (via App.jsx).           ║
+ * ║        Orders are placed using the logged-in user's ID as merchantId.      ║
+ * ║        The old "choose a merchant" dropdown is no longer needed — the       ║
+ * ║        authenticated user IS the merchant.                                  ║
+ * ║                                                                              ║
+ * ║  ACCESS CONTROL (ACC-US4):                                                   ║
+ * ║        This page is only accessible to roles with IPOS-SA-ORD access.      ║
+ * ║        The nav guard in App.jsx + rbac.js hides the "Place Order" button   ║
+ * ║        from roles that don't have order access.                             ║
+ * ║        Backend: /api/orders/** → authenticated (SecurityConfig.java).      ║
+ * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
  * ║        - Add quantity validation (min 1, max = availabilityCount).          ║
- * ║        - Add ability to order multiple different products at once.          ║
+ * ║        - Add ability to order multiple different products at once           ║
+ * ║          (ORD-US1 child ticket 2).                                         ║
  * ║        - Show an order summary/confirmation before submitting.              ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 import { useState, useEffect } from "react";
-import { getProducts, getUsers, placeOrder } from "./api.js";
+import { getProducts, placeOrder } from "./api.js";
 
 /*
  * ── PROPS ────────────────────────────────────────────────────────────────────
  *
- * This component receives ONE prop from its parent (App.jsx):
+ * onOrderPlaced — A callback function from App.jsx.  When the order
+ *                 succeeds, we call this to switch back to the Catalogue
+ *                 and refresh it (so stock levels update).
  *
- *   onOrderPlaced — A callback function.  When the order succeeds, we call
- *                   onOrderPlaced() to notify the parent, which then
- *                   switches back to the Catalogue and refreshes it.
- *
- *   currentUser   — Optional.  The user who is logged in { id, name, role }.
- *                   If present and role is MERCHANT, we default the merchant
- *                   dropdown to this user so they order as themselves.
- *
- * Props are the standard way for child → parent communication in React.
- * The parent defines the function, passes it down as a prop, and the child
- * calls it when something important happens.
- *
- * DATA FLOW IN REACT:
- *   - Data flows DOWN via props (parent → child).
- *   - Events flow UP via callbacks (child → parent).
- *   This is called "one-way data flow" and keeps the code predictable.
+ * currentUser   — The authenticated user { id, name, username, role }.
+ *                 We use currentUser.id as the merchantId when placing orders.
  */
 function OrderForm({ onOrderPlaced, currentUser }) {
   const [products, setProducts] = useState([]);
-  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  /*
-   * Form state — these correspond to the form inputs.
-   * When the user types or selects, we update state, which causes a
-   * re-render, which updates the input's displayed value.  This is
-   * called a "controlled component" pattern: React state is the
-   * single source of truth for the input's value.
-   */
-  const [merchantId, setMerchantId] = useState("");
+  /* Form state for the selected product and quantity. */
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState(1);
 
@@ -61,30 +54,17 @@ function OrderForm({ onOrderPlaced, currentUser }) {
   const [isError, setIsError] = useState(false);
 
   /*
-   * Load products and users when the component mounts.
-   * We need both to populate the dropdown menus.
+   * Load products when the component mounts.
+   * We need the product list to populate the dropdown.
    */
   useEffect(() => {
     async function fetchData() {
       try {
-        const [productsData, usersData] = await Promise.all([
-          getProducts(),
-          getUsers(),
-        ]);
+        const productsData = await getProducts();
         setProducts(productsData);
-        setUsers(usersData);
-
         if (productsData.length > 0) setProductId(productsData[0].id);
-        if (usersData.length > 0) {
-          // If the logged-in user is a MERCHANT, default the dropdown to them.
-          const defaultMerchantId =
-            currentUser?.role === "MERCHANT"
-              ? currentUser.id
-              : usersData[0].id;
-          setMerchantId(defaultMerchantId);
-        }
       } catch (err) {
-        setMessage("Failed to load form data: " + err.message);
+        setMessage("Failed to load products: " + err.message);
         setIsError(true);
       } finally {
         setLoading(false);
@@ -92,16 +72,13 @@ function OrderForm({ onOrderPlaced, currentUser }) {
     }
 
     fetchData();
-  }, [currentUser?.id, currentUser?.role]);
+  }, []);
 
   /*
-   * ── FORM SUBMISSION HANDLER ───────────────────────────────────────────────
+   * ── FORM SUBMISSION ───────────────────────────────────────────────────
    *
-   * This is an async function that:
-   *   1. Prevents the browser's default form submission (page reload).
-   *   2. Calls our placeOrder() API function.
-   *   3. Shows a success or error message.
-   *   4. Notifies the parent via the onOrderPlaced callback on success.
+   * Uses the authenticated user's ID as the merchantId.
+   * No more manual merchant selection — you order as yourself.
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -110,17 +87,13 @@ function OrderForm({ onOrderPlaced, currentUser }) {
     setMessage(null);
 
     try {
-      await placeOrder(Number(merchantId), [
+      await placeOrder(currentUser.id, [
         { productId: Number(productId), quantity: Number(quantity) },
       ]);
 
       setMessage("Order placed successfully!");
       setIsError(false);
 
-      /*
-       * After a brief delay, call the parent's callback so the user
-       * can see the success message before switching pages.
-       */
       setTimeout(() => {
         if (onOrderPlaced) onOrderPlaced();
       }, 1500);
@@ -134,14 +107,12 @@ function OrderForm({ onOrderPlaced, currentUser }) {
 
   if (loading) return <p className="status-message">Loading form data...</p>;
 
-  if (users.length === 0 || products.length === 0) {
+  if (products.length === 0) {
     return (
       <div className="order-form">
         <h2>Place an Order</h2>
         <p className="status-message">
-          {users.length === 0
-            ? "No users found. Create a user first (POST /api/users)."
-            : "No products found. Create products first (POST /api/products)."}
+          No products found. An administrator must add products first.
         </p>
       </div>
     );
@@ -151,25 +122,12 @@ function OrderForm({ onOrderPlaced, currentUser }) {
     <div className="order-form">
       <h2>Place an Order</h2>
 
-      <form onSubmit={handleSubmit}>
-        {/* Merchant select — populated from the users API */}
-        <div className="form-group">
-          <label htmlFor="merchant">Merchant:</label>
-          <select
-            id="merchant"
-            value={merchantId}
-            onChange={(e) => setMerchantId(e.target.value)}
-          >
-            {users
-              .filter((u) => u.role === "MERCHANT")
-              .map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name} (ID: {user.id})
-                </option>
-              ))}
-          </select>
-        </div>
+      {/* Show who is placing the order (the authenticated user). */}
+      <p style={{ color: "#6b7280", fontSize: "0.9rem", marginBottom: "1rem" }}>
+        Ordering as: <strong>{currentUser.name}</strong> ({currentUser.role})
+      </p>
 
+      <form onSubmit={handleSubmit}>
         {/* Product select — populated from the products API */}
         <div className="form-group">
           <label htmlFor="product">Product:</label>
@@ -204,7 +162,6 @@ function OrderForm({ onOrderPlaced, currentUser }) {
         </button>
       </form>
 
-      {/* Success or error message */}
       {message && (
         <p className={`status-message ${isError ? "error" : "success"}`}>
           {message}

@@ -10,16 +10,28 @@
  * ║          3. Return the result as JSON.                                       ║
  * ║        Controllers should contain ZERO business logic.                       ║
  * ║                                                                              ║
- * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add @GetMapping("/{id}") to fetch a single user.                  ║
- * ║        - Add @PutMapping("/{id}") to update a user.                        ║
- * ║        - Add @DeleteMapping("/{id}") to delete a user.                     ║
+ * ║  ACCESS CONTROL (ACC-US4 — RBAC):                                           ║
+ * ║        ALL endpoints in this controller are restricted to ADMIN only.       ║
+ * ║        This is enforced in SecurityConfig.java via:                         ║
+ * ║          .requestMatchers("/api/users/**").hasRole("ADMIN")                ║
+ * ║                                                                              ║
+ * ║        Only Administrators can create users, list users, or manage          ║
+ * ║        accounts.  Managers and Merchants will receive 403 Forbidden.        ║
+ * ║                                                                              ║
+ * ║  FUTURE WORK (ACC-US5, ACC-US6):                                            ║
+ * ║        - Add endpoints for Managers to view/edit merchant settings           ║
+ * ║          (credit limits, discount plans) at a different URL path             ║
+ * ║          like /api/merchant-settings/{id} with MANAGER role access.         ║
+ * ║        - Add PUT /api/users/{id} for updating user details.                ║
+ * ║        - Add DELETE /api/users/{id} for deactivating accounts.             ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.controller;
 
+import com.ipos.dto.UserResponse;
 import com.ipos.entity.User;
 import com.ipos.service.UserService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /*
  * @RestController — Combines two annotations:
@@ -34,12 +47,8 @@ import java.util.List;
  *   @ResponseBody → Every method's return value is serialized to JSON
  *                    automatically (instead of looking for an HTML template).
  *
- *   So when findAll() returns a List<User>, Spring converts it to a JSON array
- *   like: [{"id":1,"name":"Alice","role":"ADMIN"}, …]
- *
  * @RequestMapping("/api/users") — A prefix for all endpoints in this controller.
  *   Every @GetMapping / @PostMapping path is relative to this prefix.
- *   So @GetMapping means GET /api/users.
  */
 @RestController
 @RequestMapping("/api/users")
@@ -52,36 +61,67 @@ public class UserController {
     }
 
     /*
-     * @GetMapping — Maps HTTP GET requests to this method.
-     *   GET /api/users  →  returns all users as a JSON array.
+     * GET /api/users → Returns all users as a JSON array of UserResponse DTOs.
      *
-     *   GET is the standard HTTP method for READING data.
-     *   It should never modify anything on the server.
+     * SECURITY: ADMIN only (enforced by SecurityConfig).
+     *
+     * We return UserResponse DTOs (not raw User entities) to ensure password
+     * hashes are NEVER included in the response.  Even though User.passwordHash
+     * has @JsonIgnore, using DTOs is belt-and-suspenders security.
      */
     @GetMapping
-    public List<User> findAll() {
-        return userService.findAll();
+    public List<UserResponse> findAll() {
+        return userService.findAll().stream()
+                .map(UserResponse::fromEntity)
+                .toList();
     }
 
     /*
-     * @PostMapping — Maps HTTP POST requests to this method.
-     *   POST /api/users  →  creates a new user.
+     * POST /api/users → Creates a new user.
      *
-     *   POST is the standard HTTP method for CREATING data.
+     * SECURITY: ADMIN only (enforced by SecurityConfig).
      *
-     * @RequestBody — Tells Spring: "take the JSON body of the HTTP request
-     *   and deserialize (convert) it into a User Java object."
+     * Expected JSON body:
+     * {
+     *   "name": "Alice Smith",
+     *   "username": "alice",
+     *   "password": "securePassword123",
+     *   "role": "MERCHANT"
+     * }
      *
-     *   For example, the frontend sends:
-     *     POST /api/users
-     *     Content-Type: application/json
-     *     { "name": "Alice", "role": "ADMIN" }
+     * The password is hashed by UserService.createUser() before storage.
+     * The response contains the created user WITHOUT the password hash.
      *
-     *   Spring reads that JSON and creates a User object with
-     *   name="Alice" and role=ADMIN, then passes it to this method.
+     * We use a Map<String, String> for the request body to keep it simple.
+     * A dedicated CreateUserRequest DTO could be used in a future refactor.
      */
     @PostMapping
-    public User create(@RequestBody User user) {
-        return userService.save(user);
+    public ResponseEntity<?> create(@RequestBody Map<String, String> body) {
+        try {
+            String name     = body.get("name");
+            String username = body.get("username");
+            String password = body.get("password");
+            String roleStr  = body.get("role");
+
+            if (roleStr == null || roleStr.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Role is required (ADMIN, MANAGER, or MERCHANT)."));
+            }
+
+            User.Role role;
+            try {
+                role = User.Role.valueOf(roleStr.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error",
+                                "Invalid role: '" + roleStr + "'. Must be ADMIN, MANAGER, or MERCHANT."));
+            }
+
+            User user = userService.createUser(name, username, password, role);
+            return ResponseEntity.ok(UserResponse.fromEntity(user));
+
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 }
