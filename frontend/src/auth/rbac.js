@@ -43,7 +43,7 @@
  * ║        1. Add the role to User.Role enum in the backend (User.java).        ║
  * ║        2. Add a new entry in ACCESS_MATRIX below with the allowed packages. ║
  * ║        3. Update SecurityConfig.java on the backend with URL-level rules.   ║
- * ║        4. Update docs/RBAC.md with the new role's permissions.              ║
+ * ║        4. Update RBAC.md (project root) with the new role's permissions.   ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 

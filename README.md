@@ -1,6 +1,6 @@
 # IPOS-SA — Pharmaceutical Stock & Order Management
 
-A **Spring Boot (Java)**, **React (Vite)**, and **MySQL**.
+A **Spring Boot (Java)**, **React (Vite)**, and **MySQL** prototype for pharmaceutical catalogue browsing, ordering, and **account management** (merchant profiles, credit limits, fixed/flexible discount plans, role-based access, and manager maintenance).
 
 ```
 React (Frontend)  →  Spring Boot (Backend API)  →  MySQL (Database)
@@ -16,8 +16,13 @@ React (Frontend)  →  Spring Boot (Backend API)  →  MySQL (Database)
 - [Authentication & Default Users](#authentication--default-users)
 - [Running the Application](#running-the-application)
 - [Login and Where Data Is Stored](#login-and-where-data-is-stored)
+- [Feature Packages (Brief Alignment)](#feature-packages-brief-alignment)
+- [Key API Endpoints (summary)](#key-api-endpoints-summary)
+- [Documentation & Progress Reports](#documentation--progress-reports)
+- [Backend Tests](#backend-tests)
 - [Project Structure](#project-structure)
 - [Database Schema](#database-schema)
+- [Prerequisite knowledge needed](#prerequisite-knowledge-needed)
 
 ---
 
@@ -26,9 +31,9 @@ React (Frontend)  →  Spring Boot (Backend API)  →  MySQL (Database)
 | Layer    | Technology           | Version / notes      |
 |----------|----------------------|----------------------|
 | Frontend | React (Vite, JS)     | Node 20+ required    |
-| Backend  | Spring Boot          | 3.4.x, Java 23       |
+| Backend  | Spring Boot          | 3.4.x, **Java 17** (`pom.xml`) |
 | Database | MySQL                | 8.x+                 |
-| Build    | Maven                | 3.9+ or use `mvnw`   |
+| Build    | Maven                | 3.9+ (`mvn` on PATH) |
 
 ---
 
@@ -38,15 +43,16 @@ Install the following **before** running the app:
 
 | Tool      | Purpose                          | Where to get it |
 |-----------|-----------------------------------|-----------------|
-| **Java 23**       | Backend runs on JVM; Maven compiles with it | [Oracle](https://www.oracle.com/java/technologies/downloads/) or [Eclipse Temurin](https://adoptium.net/) |
+| **Java 17**       | Backend compiles and runs on JVM (`java.version` in `backend/pom.xml`) | [Eclipse Temurin 17](https://adoptium.net/) |
 | **Node.js 20+**   | Frontend build and dev server     | [nodejs.org](https://nodejs.org/) (LTS) or `winget install OpenJS.NodeJS.LTS` |
 | **MySQL 8+**      | Database for users, products, orders | [MySQL](https://dev.mysql.com/downloads/) or a packaged install (e.g. XAMPP) |
-| **Maven 3.9+**    | Build and run backend             | [Maven](https://maven.apache.org/download.cgi) or use the `mvnw` wrapper in `backend/` |
+| **Maven 3.9+**    | Build and run backend             | [Maven](https://maven.apache.org/download.cgi) — run commands from `backend/` |
 
 - **Node:** Vite 6 needs Node 18+ (Node 20 LTS recommended). On Windows, if `npm` scripts are blocked, run:  
   `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
 
-- **Java:** If you have any issues surrounding java just let me know on whatsapp
+- **Java:** Use `java -version` and ensure it matches `java.version` in `backend/pom.xml` (17).
+
 ---
 
 ## Full Setup Guide
@@ -75,7 +81,7 @@ Use the project folder as your working directory (e.g. `team-proj`).
    spring.datasource.password=YOUR_MYSQL_PASSWORD
    ```
 
-   If you use the `root` user, set the password you use to connect to MySQL (e.g. with MySQL Workbench or the command line). The default in the project is `root` / `root`; change both if your setup differs.
+   Set values to match **your** MySQL user (e.g. `root` or a dedicated user). Do not commit real production passwords; use local credentials only.
 
 4. **Optional:** Create a dedicated user and grant access:
 
@@ -97,19 +103,13 @@ On first run, Spring Boot (Hibernate) will create the tables in `ipos_sa` automa
    cd backend
    ```
 
-2. Run the application:
-
-   **Windows (PowerShell):**
-
-   ```powershell
-   .\mvnw.cmd spring-boot:run
-   ```
-
-   **macOS / Linux:**
+2. Run the application (Maven must be on your PATH):
 
    ```bash
-   ./mvnw spring-boot:run
+   mvn spring-boot:run
    ```
+
+   On **Windows PowerShell**, if `-D` flags are passed to Maven, quote them (e.g. `mvn test "-Dspring.profiles.active=test"`).
 
 3. Wait until you see something like:
 
@@ -120,9 +120,11 @@ On first run, Spring Boot (Hibernate) will create the tables in `ipos_sa` automa
 
 4. The API is available at **http://localhost:8080** (e.g. `http://localhost:8080/api/products`).
 
-If you see **"release version 23 not supported"**, your Maven is using a JDK that doesn't support Java 23. Either set `java.version` in `backend/pom.xml` to `17`, or install JDK 23 and set `JAVA_HOME` to it.
+If you see **"release version not supported"**, install a JDK that matches `java.version` in `backend/pom.xml` (currently **17**) and point `JAVA_HOME` to it.
 
 If you see **"Access denied for user 'root'@'localhost'"**, the username or password in `application.properties` does not match your MySQL setup. Fix the two properties and try again.
+
+If MySQL fails DDL on **`year_month`**, ensure you are on a current schema: the flexible settlement table uses column name **`settlement_year_month`** (MySQL reserves `year_month`).
 
 ### Step 4: Frontend (React + Vite)
 
@@ -172,6 +174,8 @@ When `ipos.bootstrap.enabled=true` in `application.properties` (the default), th
 | `manager` | `manager123` | MANAGER | Reporting + merchant settings |
 | `merchant` | `merchant123` | MERCHANT | Catalogue browsing + orders |
 
+The seeded **merchant** user also has a **MerchantProfile** (contact details, £10,000 credit limit, FIXED 5% discount, standing NORMAL, **account status ACTIVE**).
+
 Simply start the backend, open the frontend, and log in with one of these credentials.
 
 ### Creating Additional Users (Admin only)
@@ -197,7 +201,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/merchant-accounts" -Method Pos
 - Sessions are managed via JSESSIONID cookies.
 - CSRF protection is enabled (XSRF-TOKEN cookie + X-XSRF-TOKEN header).
 - Role-based access control restricts which pages and API endpoints each role can use.
-- See `docs/RBAC.md` for the full role x package access matrix.
+- See **`RBAC.md`** in the **project root** for the full role × package access matrix.
 
 ---
 
@@ -205,14 +209,14 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/merchant-accounts" -Method Pos
 
 1. **Start MySQL** (if not running as a service).
 2. **Start the backend:**  
-   `cd backend` then `.\mvnw.cmd spring-boot:run` (Windows) or `./mvnw spring-boot:run` (macOS/Linux).
+   `cd backend` then `mvn spring-boot:run`.
 3. **Start the frontend:**  
    `cd frontend` then `npm run dev`.
 4. Open **http://localhost:5173** in your browser.
 5. On the Login screen, enter credentials (e.g., `admin` / `admin123`) and click **Log in**.
-6. Navigation items are shown based on your role. Use **Catalogue** to view products and **Place Order** to create orders.
+6. Navigation items are shown based on your role. Use **Catalogue** to view products and **Place Order** to create orders. **Accounts** (admin) creates merchants; **Merchants** (manager/admin) edits profiles, standing, flexible month-close.
 
-To place orders, you need products. Log in as admin and create them via the API:
+To place orders, you need products. Log in as admin and create them via the API (there is no admin catalogue UI yet — see `CATprogress.txt`):
 
 ```powershell
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -233,7 +237,64 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
   Stored in a **server-side HTTP session** (JSESSIONID cookie). The session persists across page refreshes. When the React app loads, it calls `GET /api/auth/me` to restore the logged-in user. Logging out invalidates the session.
 
 - **Role-based access:**  
-  Navigation items are shown/hidden based on the user's role. Backend API endpoints are also protected. See `docs/RBAC.md` for full details.
+  Navigation items are shown/hidden based on the user's role. Backend API endpoints are also protected. See **`RBAC.md`** (project root) for full details.
+
+---
+
+## Feature Packages (Brief Alignment)
+
+| Package        | Scope in this repo | Notes |
+|----------------|--------------------|--------|
+| **IPOS-SA-ACC** | Implemented (prototype) | Merchant onboarding (`POST /api/merchant-accounts`, validated DTO), staff users (`/api/users`), RBAC. See **`ACCprogress.txt`**. |
+| **IPOS-SA-MER** | Implemented (prototype) | Merchant **profiles**: `GET`/`PUT /api/merchant-profiles`, flexible **month-close** (`POST .../close-month`), contact edits, standing rules (`IN_DEFAULT` → `NORMAL`/`SUSPENDED` with 30-day rule for managers), **`StandingChangeLog`** audit. Manager + Admin only (not merchants). Documented in **`ACCprogress.txt`** / **`RBAC.md`**. |
+| **IPOS-SA-CAT** | Partial | `Product` entity, `GET`/`POST /api/products` (no `PUT`/`DELETE` on controller yet — security rules exist for when added). Catalogue + order UIs; **no** admin catalogue UI, search, deliveries, min-stock, or merchant stock masking. See **`CATprogress.txt`**. |
+| **IPOS-SA-ORD** | Partial | `POST /api/orders`: stock decrement, price snapshot, discounts, credit limit, **ORD-US1** (merchants forced to own `merchantId`). `GET /api/orders` returns **all** orders for any authenticated user (merchant-scoped list not implemented). Invoices/payments/status workflow still to do. |
+| **IPOS-SA-RPRT** | Stub | `ReportingPlaceholder.jsx`; `/api/reports/**` secured for manager/admin — **no** report controllers yet. |
+
+---
+
+## Documentation & Progress Reports
+
+| File | Purpose |
+|------|---------|
+| **`RBAC.md`** (project root) | Role × package matrix, endpoint access, architecture notes. |
+| **`ACCprogress.txt`** | Account management epic: user stories, implementation detail, tests, gaps. |
+| **`CATprogress.txt`** | Catalogue / inventory epic: current vs remaining work (detailed). |
+
+**Note:** `RBAC.md` is the live reference for roles × packages and URL rules. If its “Future work” checklist ever drifts from **`ACCprogress.txt`** / **`CATprogress.txt`**, treat the progress files as the detailed source of truth for story completion.
+
+---
+
+## Key API Endpoints (summary)
+
+| Area | Method & path | Roles (typical) |
+|------|----------------|-----------------|
+| Auth | `POST /api/auth/login` | Public |
+| Auth | `GET /api/auth/me`, `POST /api/auth/logout` | Authenticated |
+| Merchant accounts | `POST /api/merchant-accounts` | ADMIN |
+| Merchant profiles | `GET`/`PUT /api/merchant-profiles`, `GET /api/merchant-profiles/{userId}`, `POST /api/merchant-profiles/close-month` | MANAGER, ADMIN |
+| Staff users | `/api/users/**` | ADMIN |
+| Products | `GET /api/products` | Authenticated |
+| Products | `POST`/`PUT`/`DELETE /api/products/**` | ADMIN (PUT/DELETE not wired in `ProductController` yet) |
+| Orders | `/api/orders/**` | Authenticated |
+| Reports | `/api/reports/**` | MANAGER, ADMIN (no handlers yet) |
+
+Full detail: **`RBAC.md`** and `backend/.../SecurityConfig.java`.
+
+---
+
+## Backend Tests
+
+JUnit 5 **unit** tests live under `backend/src/test/java/` (currently **`com.ipos.service.MerchantAccountServiceTest`** — 20 tests: merchant creation, tier validation, fixed/flexible order math, credit limit, ORD-US1 isolation, `AccountStatus`, `inDefaultSince`, `StandingChangeLog` entity checks, suspended/in-default blocking). **No** `ProductController` / `WebMvc` integration tests yet.
+
+Test profile (H2 in-memory, bootstrap off):
+
+```bash
+cd backend
+mvn test "-Dspring.profiles.active=test"
+```
+
+On Windows PowerShell, keep the profile argument in quotes so `-D` is not parsed incorrectly.
 
 ---
 
@@ -243,11 +304,11 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 team-proj/
 ├── .gitignore
 ├── README.md
-├── docs/
-│   └── RBAC.md                      # Role x package access matrix & architecture
+├── RBAC.md                          # Role x package access matrix (project root)
+├── ACCprogress.txt                  # IPOS-SA-ACC progress & documentation
+├── CATprogress.txt                  # IPOS-SA-CAT progress & backlog
 ├── backend/                          # Spring Boot
-│   ├── pom.xml
-│   ├── mvnw, mvnw.cmd               # Maven wrapper
+│   ├── pom.xml                      # Java 17; validation, security-test, H2 (test)
 │   └── src/main/
 │       ├── java/com/ipos/
 │       │   ├── IposApplication.java
@@ -267,11 +328,18 @@ team-proj/
 │       │   ├── entity/
 │       │   │   ├── User.java
 │       │   │   ├── Product.java
-│       │   │   ├── Order.java           # Extended: pricing, discounts, totalDue
-│       │   │   ├── OrderItem.java       # Extended: unitPriceAtOrder
-│       │   │   ├── MerchantProfile.java # ACC-US1: contact, credit, discount, standing
-│       │   │   └── MonthlyRebateSettlement.java  # Flexible month-close records
+│       │   │   ├── Order.java           # pricing, discounts, totalDue, status
+│       │   │   ├── OrderItem.java       # unitPriceAtOrder snapshot
+│       │   │   ├── MerchantProfile.java # contact, credit, plans, standing, accountStatus, inDefaultSince
+│       │   │   ├── MonthlyRebateSettlement.java  # Flexible month-close (settlement_year_month)
+│       │   │   └── StandingChangeLog.java        # Audit: standing changes (ACC-US5)
 │       │   ├── repository/
+│       │   │   ├── UserRepository.java
+│       │   │   ├── ProductRepository.java
+│       │   │   ├── OrderRepository.java / OrderItemRepository.java
+│       │   │   ├── MerchantProfileRepository.java
+│       │   │   ├── MonthlyRebateSettlementRepository.java
+│       │   │   └── StandingChangeLogRepository.java
 │       │   ├── service/
 │       │   │   ├── UserService.java
 │       │   │   ├── ProductService.java
@@ -286,6 +354,11 @@ team-proj/
 │       │       └── OrderController.java
 │       └── resources/
 │           └── application.properties
+│   └── src/test/
+│       ├── java/com/ipos/service/
+│       │   └── MerchantAccountServiceTest.java   # JUnit 5 + Mockito
+│       └── resources/
+│           └── application-test.properties       # H2, ipos.bootstrap.enabled=false
 └── frontend/                          # React + Vite
     ├── package.json
     ├── vite.config.js
@@ -333,9 +406,22 @@ Tables are created automatically by Hibernate on first run.
        │  │ discount_plan_type         │
        │  │ fixed_discount_percent     │
        │  │ flexible_tiers_json        │
-       │  │ standing                   │
+       │  │ account_status             │  # INACTIVE | ACTIVE (ACC-US1)
+       │  │ standing                   │  # NORMAL | IN_DEFAULT | SUSPENDED
+       │  │ in_default_since           │  # For 30-day rule (ACC-US5)
        │  │ flexible_discount_credit   │
        │  │ cheque_rebate_pending      │
+       │  └────────────────────────────┘
+       │
+       │  ┌────────────────────────────┐
+       ├──│   standing_change_logs     │
+       │  ├────────────────────────────┤
+       │  │ id (PK)                    │
+       │  │ merchant_id (FK)           │──→ users
+       │  │ previous_standing          │
+       │  │ new_standing               │
+       │  │ changed_by_user_id (FK)    │──→ users
+       │  │ changed_at                 │
        │  └────────────────────────────┘
        │
        │  ┌──────────────────────────┐
@@ -381,6 +467,7 @@ Tables are created automatically by Hibernate on first run.
 - Spring Boot: `@RestController`, `@Service`, `@Repository`, `@Transactional`, request/response flow.
 - Spring Security: authentication, session management, CSRF protection, RBAC.
 - JPA/Hibernate: `@Entity`, `@Id`, `@ManyToOne`, `@OneToMany`, `ddl-auto`, primary and foreign keys.
+- Jakarta Bean Validation: used on merchant account DTOs (`spring-boot-starter-validation`).
 - Full stack: frontend → REST API → service → repository → MySQL.
 
-Next steps will include meeting all the user stories that we must finish.
+Remaining work is tracked in **`CATprogress.txt`** (catalogue/inventory) and the **Reporting** stub; **`ACCprogress.txt`** summarises the account-management package status.

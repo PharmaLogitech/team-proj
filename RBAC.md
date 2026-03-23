@@ -82,7 +82,7 @@ A malicious site can trigger the browser to send cookies automatically, but it *
 | `/api/auth/login` | POST | Public | No session exists yet |
 | `/api/auth/logout` | POST | Authenticated | Any role |
 | `/api/auth/me` | GET | Authenticated | Session restoration |
-| `/api/merchant-accounts/**` | POST | ADMIN | Merchant account creation (ACC-US1) |
+| `/api/merchant-accounts/**` | ALL | ADMIN | Merchant account creation (ACC-US1); path is admin-only |
 | `/api/merchant-profiles/**` | ALL | MANAGER or ADMIN | Merchant profile management (ACC-US6, brief §iii) |
 | `/api/users/**` | ALL | ADMIN | Staff user management (IPOS-SA-ACC) |
 | `/api/products/**` | GET | Authenticated | Catalogue browsing (all roles) |
@@ -112,9 +112,11 @@ Each MERCHANT user has a 1:1 `MerchantProfile` containing:
 | discountPlanType | FIXED or FLEXIBLE |
 | fixedDiscountPercent | Percentage for FIXED plans (0–100) |
 | flexibleTiersJson | JSON tier array for FLEXIBLE plans |
+| accountStatus | INACTIVE or ACTIVE (ACC-US1 lifecycle; successful create sets ACTIVE) |
 | standing | NORMAL, IN_DEFAULT, or SUSPENDED |
+| inDefaultSince | When the merchant entered IN_DEFAULT (30-day rule for manager restore) |
 | flexibleDiscountCredit | Accumulated credit from month-close settlements |
-| chequeRebatePending | Pending cheque payouts from month-close |
+| chequeRebatePending | Pending cheque payouts from month-close (ledger; no real payment integration) |
 
 ### Discount Plans (brief §i)
 
@@ -122,9 +124,11 @@ Each MERCHANT user has a 1:1 `MerchantProfile` containing:
 
 **Flexible**: Tiered percentages based on calendar-month gross spend. The rebate is computed at month-close (not per-order). Settlement disburses as credit (applied to next orders) or cheque (recorded for reporting).
 
-### Standing Transitions (brief §iii)
+### Standing Transitions (brief §iii, ACC-US5)
 
-Managers may change: `IN_DEFAULT → NORMAL` or `IN_DEFAULT → SUSPENDED`. Orders are blocked for merchants not in `NORMAL` standing.
+Managers (and Admins, for consistency) may change: `IN_DEFAULT → NORMAL` or `IN_DEFAULT → SUSPENDED` via `PUT /api/merchant-profiles/{userId}`. Other standing changes are rejected. A **30-day** minimum in default applies before the transition (using `inDefaultSince`). Each successful change is recorded in **`standing_change_logs`** (`StandingChangeLog` entity) with the acting user and timestamp.
+
+Orders are blocked for merchants not in `NORMAL` standing (`IN_DEFAULT`, `SUSPENDED`).
 
 ---
 
@@ -171,28 +175,29 @@ Set `ipos.bootstrap.enabled=false` in production.
 
 ## Future Work Checklist
 
-The following user stories depend on the RBAC foundation and will extend it:
+High-level checklist; **detailed** status is in **`ACCprogress.txt`** (ACC) and **`CATprogress.txt`** (CAT).
 
-### Account Management (IPOS-SA-ACC)
-- [x] ACC-US1: Merchant Account Creation (contact details, credit limit, discount plan, Active/Inactive status)
-- [ ] ACC-US2: Fixed Discount Plan Assignment
-- [ ] ACC-US3: Flexible Discount Plan Configuration
+### Account Management (IPOS-SA-ACC) — see `ACCprogress.txt`
+- [x] ACC-US1: Merchant Account Creation (validated DTO, atomic user + profile, `accountStatus`)
+- [x] ACC-US2: Fixed Discount Plan Assignment (per-merchant %, applied at order time)
+- [x] ACC-US3: Flexible Discount Plan Configuration (tiers, month-close, credit/cheque ledger)
 - [x] ACC-US4: Role-Based Access Control (MERCHANT, MANAGER, ADMIN)
-- [ ] ACC-US5: Managing Defaulted Accounts (Manager-only restore, audit log)
-- [ ] ACC-US6: Managing Accounts (Manager edits credit limits and discount plans)
+- [x] ACC-US5: Managing Defaulted Accounts (manager restore rules, 30-day rule, `StandingChangeLog`)
+- [x] ACC-US6: Managing Accounts (manager profile PUT: credit, plans, contacts, standing)
 
-### Catalogue & Inventory (IPOS-SA-CAT)
-- [ ] CAT-US3: Product Discontinuation/Removal (delete endpoint + confirmation + audit log)
-- [ ] CAT-US4: Product Data Maintenance (update endpoint + validation)
-- [ ] CAT-US5: Internal Product Search (search by ID, description, price range)
-- [ ] CAT-US6: Merchant Catalogue Browsing (hide stock levels, partial-word search)
+### Catalogue & Inventory (IPOS-SA-CAT) — see `CATprogress.txt`
+- [ ] CAT-US1–US2: Partial (schema + `GET`/`POST` products; validation / admin UI gaps)
+- [ ] CAT-US3: Product removal (delete endpoint + confirmation + audit log)
+- [ ] CAT-US4: Product update (`PUT` + validation)
+- [ ] CAT-US5: Internal Product Search (ID, description, price range)
+- [ ] CAT-US6: Merchant browsing (hide numeric stock; partial-word search)
 - [ ] CAT-US7: Stock Delivery Recording
-- [ ] CAT-US8: Minimum Stock Thresholds
-- [ ] CAT-US9: Automated Low-Stock Warnings
-- [ ] CAT-US10: Low-Stock Reporting
+- [ ] CAT-US8–US9: Minimum thresholds + low-stock UI warnings
+- [ ] CAT-US10: Low-Stock Reporting (under IPOS-SA-RPRT)
 
 ### Orders & Fulfillment (IPOS-SA-ORD)
-- [x] ORD-US1: Restrict merchants to their own orders
+- [x] ORD-US1: Merchants **placing** orders are restricted to their own `merchantId` (`POST` / service)
+- [ ] ORD-US1b (gap): `GET /api/orders` is not merchant-scoped — all roles receive the full list today
 - [ ] ORD-US2: Real-time Order Tracking
 - [ ] ORD-US3: Financial Balance Oversight
 - [ ] ORD-US4: Stock reduction on "Accepted" status (not on placement)
