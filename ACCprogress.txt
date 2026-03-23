@@ -2,12 +2,17 @@
  IPOS-SA-ACC — Account Management Package — Progress Report
 ================================================================================
 
-Generated: 2026-03-21
-Covers:    ACC-US1  (Merchant Account Creation)
-           ACC-US4  (Role-Based Access Control)
-           Brief §i  (Fixed + Flexible Discount Plans)
-           Brief §iii (Manager Merchant Maintenance)
-           ORD-US1  (Merchant Order Isolation)
+Generated : 2026-03-21
+Last updated : 2026-03-21
+
+Epic        : User Account Management (IPOS-SA-ACC)
+Covers      : ACC-US1  Merchant Account Creation
+              ACC-US2  Fixed Discount Plan Assignment
+              ACC-US3  Flexible Discount Plan Configuration
+              ACC-US4  Role-Based Access Control (RBAC)
+              ACC-US5  Managing Defaulted Accounts
+              ACC-US6  Managing Accounts
+
 
 ================================================================================
  1. OVERVIEW — WHAT IS IPOS-SA-ACC?
@@ -18,200 +23,601 @@ handles creating and configuring user accounts, enforcing role-based access
 control, and managing the business profile of merchant accounts (contact
 details, credit limits, discount plans, and account standing).
 
-The brief defines three types of accounts:
+The brief defines three groups of accounts:
 
-  i)   MERCHANT  — Can access IPOS-SA-CAT (Catalogue) and IPOS-SA-ORD
-                    (Orders) only.  Must have contact details, credit limit,
-                    and a discount plan configured before the account is
-                    activated.
+  i)   MERCHANT  — Can access IPOS-SA-CAT (Catalogue) and IPOS-SA-ORD (Orders)
+                   only.  Must have contact details, credit limit, and a
+                   discount plan configured before the account is activated.
+                   Two discount plan types are supported: FIXED and FLEXIBLE.
 
   ii)  ADMIN     — Full access to all packages including IPOS-SA-ACC.
 
   iii) MANAGER   — Access to IPOS-SA-RPRT (Reporting).  Can also access
-                    merchant accounts to alter credit limits, discount plans,
-                    and change the state of an "in default" account to either
-                    "normal" or "suspended."
+                   merchant accounts to alter credit limits, discount plans,
+                   and change the state of an "in default" account to either
+                   "normal" or "suspended."
 
 
 ================================================================================
- 2. WHAT HAS BEEN COMPLETED
+ 2. USER STORY STATUS SUMMARY
 ================================================================================
 
--- 2.1  ROLE-BASED ACCESS CONTROL (ACC-US4) --------------------------------
-
-Status: COMPLETE
-
-Three roles exist in User.Role enum: ADMIN, MANAGER, MERCHANT.
-
-Backend enforcement (SecurityConfig.java):
-  - /api/auth/login                   → Public
-  - /api/auth/logout, /api/auth/me    → Any authenticated user
-  - /api/merchant-accounts/**         → ADMIN only
-  - /api/merchant-profiles/**         → MANAGER or ADMIN
-  - /api/users/**                     → ADMIN only
-  - GET /api/products/**              → Any authenticated user
-  - POST/PUT/DELETE /api/products/**  → ADMIN only
-  - /api/orders/**                    → Any authenticated user
-  - /api/reports/**                   → MANAGER or ADMIN
-
-Frontend enforcement (rbac.js):
-  - MERCHANT → IPOS-SA-CAT, IPOS-SA-ORD
-  - MANAGER  → IPOS-SA-CAT, IPOS-SA-ORD, IPOS-SA-RPRT, IPOS-SA-MER
-  - ADMIN    → IPOS-SA-ACC, IPOS-SA-CAT, IPOS-SA-ORD, IPOS-SA-RPRT, IPOS-SA-MER
-
-Navigation items are generated dynamically from the access matrix.  Merchants
-see only "Catalogue" and "Place Order."  Managers see those plus "Reporting"
-and "Merchants."  Admins see everything including "Accounts."
+  US1  Merchant Account Creation       ✅  COMPLETE
+  US2  Fixed Discount Plan Assignment  ✅  COMPLETE
+  US3  Flexible Discount Plan Config   ✅  COMPLETE
+  US4  Role-Based Access Control       ✅  COMPLETE
+  US5  Managing Defaulted Accounts     ✅  COMPLETE
+  US6  Managing Accounts               ✅  COMPLETE
 
 
--- 2.2  MERCHANT ACCOUNT CREATION (ACC-US1) ---------------------------------
+================================================================================
+ 3. DETAILED USER STORY DOCUMENTATION
+================================================================================
 
-Status: COMPLETE
+──────────────────────────────────────────────────────────────────────────────
+ US1: Merchant Account Creation
+──────────────────────────────────────────────────────────────────────────────
 
-Brief requirement: "If the required details are not provided the account will
-not be created."
+Title:
+  "As an Administrator, I want to create a new Merchant account which requires
+  contact and financial details so that the account is properly configured
+  before it becomes active."
 
-Implementation:
-  - POST /api/merchant-accounts (ADMIN only) creates a User (role=MERCHANT)
-    and a MerchantProfile in a single @Transactional operation.
-  - If ANY mandatory field is missing or invalid, the entire operation rolls
-    back — no orphan User row can exist without a profile.
-  - The generic POST /api/users endpoint REJECTS role=MERCHANT with a clear
-    error, forcing all merchant creation through the proper endpoint.
+ACCEPTANCE CRITERIA AND HOW EACH IS MET:
 
-MerchantProfile entity (merchant_profiles table) stores:
-  - Contact details:  contactEmail, contactPhone, addressLine (all mandatory)
-  - Credit limit:     creditLimit (BigDecimal, must be > 0)
-  - Discount plan:    discountPlanType (FIXED or FLEXIBLE)
-  - FIXED params:     fixedDiscountPercent (0-100)
-  - FLEXIBLE params:  flexibleTiersJson (JSON array of tier definitions)
-  - Standing:         NORMAL, IN_DEFAULT, or SUSPENDED (starts as NORMAL)
-  - Flexible credit:  flexibleDiscountCredit (accumulated from month-close)
-  - Cheque pending:   chequeRebatePending (for cheque settlement mode)
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 1: System must provide fields for Contact Details, Credit    │
+  │              Limit, and Discount Plan selection.                       │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
 
-Frontend: MerchantCreate.jsx provides a full form with:
-  - Credentials section (name, username, password)
-  - Contact details section (email, phone, address)
-  - Financial details section (credit limit)
-  - Discount plan section with dynamic UI:
-    - FIXED: single percentage input
-    - FLEXIBLE: tier editor (add/remove tiers with maxExclusive + percent)
+  Backend:
+    The POST /api/merchant-accounts endpoint (ADMIN-only) accepts a validated
+    CreateMerchantAccountRequest DTO containing:
+      - name, username, password      (User credentials)
+      - contactEmail, contactPhone,   (Contact details)
+        addressLine
+      - creditLimit                   (Financial detail, BigDecimal > 0)
+      - discountPlanType              (FIXED or FLEXIBLE)
+      - fixedDiscountPercent          (for FIXED plans, 0-100)
+      - flexibleTiersJson             (for FLEXIBLE plans, JSON tier array)
 
-Validation is enforced at three levels:
-  1. Frontend: HTML5 required attributes + type constraints
-  2. DTO: Jakarta Bean Validation (@NotBlank, @NotNull, @DecimalMin)
-  3. Service: Business rules (duplicate username, tier JSON structure, plan-
-     specific field presence)
+    All fields use Jakarta Bean Validation annotations: @NotBlank, @NotNull,
+    @DecimalMin.  The service layer (MerchantAccountService) performs
+    additional business-rule validation (duplicate username, tier JSON
+    structure, plan-specific field presence).
+
+  Frontend:
+    MerchantCreate.jsx provides a complete form organised into four sections:
+      1. Credentials section (name, username, password)
+      2. Contact details section (email, phone, address)
+      3. Financial details section (credit limit)
+      4. Discount plan section with dynamic UI:
+         - FIXED mode: single percentage input field
+         - FLEXIBLE mode: tier editor (add/remove tiers with maxExclusive
+           threshold and percentage)
+
+    HTML5 "required" attributes and input-type constraints provide client-side
+    validation before the request even reaches the backend.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 2: Account must remain "Inactive" and cannot be created if  │
+  │              any mandatory field is blank.                             │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  The system enforces this at three levels:
+
+    1. Frontend validation: HTML5 "required" prevents form submission with
+       empty fields.
+
+    2. DTO validation: The controller annotates the request body with @Valid.
+       Jakarta Bean Validation annotations (@NotBlank, @NotNull, @DecimalMin)
+       reject requests with missing or invalid fields before any business
+       logic executes — Spring returns a 400 Bad Request automatically.
+
+    3. Service-layer validation: MerchantAccountService.createMerchantAccount
+       checks again that mandatory fields are non-blank and that plan-specific
+       parameters are present (e.g. fixedDiscountPercent for FIXED plans,
+       valid tier JSON for FLEXIBLE plans).
+
+  The entire creation is wrapped in a @Transactional operation.  If ANY check
+  fails at ANY level, the entire operation rolls back — no partial User row
+  can exist without a MerchantProfile.  This satisfies the brief's rule:
+  "If the required details are not provided the account will not be created."
+
+  The generic POST /api/users endpoint explicitly REJECTS role=MERCHANT with
+  an error message, forcing all merchant creation through the dedicated
+  merchant-accounts endpoint.  This eliminates the risk of creating a merchant
+  User without an accompanying profile.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 3: Once all details are saved, account status should update  │
+  │              to "Active."                                              │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  MerchantProfile has an AccountStatus enum with two values: INACTIVE and
+  ACTIVE.
+
+  When MerchantAccountService.createMerchantAccount succeeds (all mandatory
+  fields validated, User and Profile saved atomically), the profile's
+  accountStatus is set to ACTIVE:
+
+    profile.setAccountStatus(MerchantProfile.AccountStatus.ACTIVE);
+
+  Because the creation is atomic (it either fully succeeds or fully rolls
+  back), there is no window where an account exists in an INACTIVE state
+  during normal creation.  The INACTIVE value exists to support a future
+  draft-save workflow where an administrator might partially fill in details
+  and return later.
+
+  The accountStatus field is:
+    - Persisted in the database (account_status column, NOT NULL)
+    - Returned in the MerchantProfileResponse DTO (visible in the API)
+    - Displayed in the MerchantManagement.jsx frontend table as a badge
+    - Set to ACTIVE in the DataBootstrap seed data for the default merchant
 
 
--- 2.3  FIXED DISCOUNT PLAN (Brief §i) --------------------------------------
+──────────────────────────────────────────────────────────────────────────────
+ US2: Fixed Discount Plan Assignment
+──────────────────────────────────────────────────────────────────────────────
 
-Status: COMPLETE
+Title:
+  "As an Administrator, I want to assign a fixed discount rate to a Merchant
+  so that a consistent discount is applied to every order they place."
 
-"The same discount rate applies to all items of any quantity ordered from the
-catalogue.  The discount is applied to each order and the amount due is
-reduced by the amount of the discount at the time of placing an order."
+ACCEPTANCE CRITERIA AND HOW EACH IS MET:
 
-Implementation in OrderService.placeOrder():
-  1. Compute grossTotal = sum of (unitPriceAtOrder * quantity) for all items.
-  2. fixedDiscountAmount = grossTotal * (fixedDiscountPercent / 100).
-  3. totalDue = grossTotal - fixedDiscountAmount.
-  4. All three values are persisted on the Order entity for audit.
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 1: The system must allow the user (Administrator) to input   │
+  │              a specific percentage rate for the "Fixed" plan.          │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
 
-Example: Merchant has 5% fixed discount, orders £200 of products.
-  grossTotal = £200.00
-  fixedDiscountAmount = £10.00
-  totalDue = £190.00
+  At account creation:
+    The MerchantCreate.jsx form presents a percentage input field when the
+    administrator selects FIXED as the discount plan type.  The value is sent
+    as fixedDiscountPercent in the CreateMerchantAccountRequest DTO and stored
+    on the MerchantProfile entity (fixed_discount_percent column, BigDecimal,
+    precision 5, scale 2).  Validation ensures the value is between 0 and 100.
+
+  After account creation (manager editing):
+    The MerchantManagement.jsx inline-edit mode allows a Manager or Admin to
+    change the discount plan type to FIXED and set a new percentage.  The
+    PUT /api/merchant-profiles/{userId} endpoint applies the change.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 2: The system must automatically reduce the "Amount Due" for │
+  │              every order placed by this merchant based on that rate.   │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  Implementation in OrderService.placeOrder():
+
+    1. Compute grossTotal = sum of (unitPriceAtOrder * quantity) for all items
+       in the order.
+    2. fixedDiscountAmount = grossTotal * (fixedDiscountPercent / 100).
+    3. totalDue = grossTotal - fixedDiscountAmount.
+    4. All three values (grossTotal, fixedDiscountAmount, totalDue) are
+       persisted on the Order entity for audit and display.
+
+  The brief states: "The discount is applied to each order and the amount due
+  is reduced by the amount of the discount at the time of placing an order."
+  This is exactly what the implementation does — the discount is calculated
+  and applied automatically at order-placement time, with no manual step.
+
+  Example: Merchant has a 5% fixed discount and places an order for £200.
+    grossTotal          = £200.00
+    fixedDiscountAmount = £200 * 5% = £10.00
+    totalDue            = £200.00 - £10.00 = £190.00
+
+  The OrderForm.jsx frontend displays this breakdown after a successful order
+  so the merchant can see how the discount was applied.
 
 
--- 2.4  FLEXIBLE DISCOUNT PLAN (Brief §i) -----------------------------------
+──────────────────────────────────────────────────────────────────────────────
+ US3: Flexible Discount Plan Configuration
+──────────────────────────────────────────────────────────────────────────────
 
-Status: COMPLETE
+Title:
+  "As a Manager, I want to set up a flexible discount plan based on monthly
+  spend so that merchants have an incentive to spend more."
 
-"The discount rates depend on the value of all orders within a calendar month.
-The amount of the discount is either paid back to the merchant by sending a
-cheque at the end of the month or deducted from the value of the next order(s)
-by the same merchant."
+ACCEPTANCE CRITERIA AND HOW EACH IS MET:
 
-Implementation:
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 1: The system must track the total value of all orders       │
+  │              within a single calendar month.                           │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
 
-  At order placement (OrderService.placeOrder()):
-  - No percentage discount is applied at placement time.
-  - If the merchant has accumulated flexibleDiscountCredit (from prior month
-    closes), that credit is consumed: min(credit, grossTotal) is subtracted
-    from grossTotal to produce totalDue.
-  - The consumed amount is recorded as flexibleCreditApplied on the Order.
+  Every Order entity stores a placedAt timestamp.  The OrderRepository has a
+  custom JPQL query (sumGrossByMerchantAndPeriod) that sums the grossTotal of
+  all non-cancelled orders placed within a given date range.
 
-  At month-close (MerchantAccountService.closeMonth()):
-  - Input: YearMonth (e.g. "2026-03") + SettlementMode (APPLY_CREDIT or CHEQUE).
-  - For each FLEXIBLE-plan merchant:
-    a) Sum grossTotal of non-cancelled orders placed in that month.
-    b) Look up the merchant's flexible tiers JSON.
-    c) Find the applicable tier percentage for the monthly gross.
-    d) computedDiscount = monthlyGross * (tierPercent / 100).
-    e) APPLY_CREDIT mode: add discount to flexibleDiscountCredit on profile.
-       CHEQUE mode: add discount to chequeRebatePending on profile.
-    f) Record a MonthlyRebateSettlement row (idempotent: merchant + yearMonth
-       unique constraint prevents double-close).
+  At month-close (MerchantAccountService.closeMonth()), the system queries
+  this sum for each FLEXIBLE-plan merchant for the specified calendar month,
+  giving the total monthly order value needed for tier resolution.
 
-  Tier JSON format:
-    [{"maxExclusive":1000,"percent":1},
-     {"maxExclusive":2000,"percent":2},
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 2: The system must apply tiered rates (e.g. 1% for <£1k,    │
+  │              2% for £1k-£2k, 3% for >£2k).                            │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  Flexible tiers are stored as a JSON array on MerchantProfile
+  (flexible_tiers_json column).  The format matches the brief's example:
+
+    [{"maxExclusive":1000, "percent":1},
+     {"maxExclusive":2000, "percent":2},
      {"percent":3}]
-  The last tier has no maxExclusive — it is the catch-all.
 
-Example: Merchant has above tiers, monthly gross = £1,500.
-  Applicable tier: 2% (between £1000 and £2000).
-  computedDiscount = £1500 * 0.02 = £30.00.
-  If APPLY_CREDIT: flexibleDiscountCredit increases by £30.
-  Next order of £100: flexibleCreditApplied = £30, totalDue = £70.
+  The last tier has no maxExclusive — it is the catch-all bracket for all
+  spend above the previous threshold.
+
+  At month-close, MerchantAccountService.resolveTierPercent() iterates
+  through the tiers and returns the percentage for the bracket that matches
+  the merchant's monthly gross.  The discount is then calculated as:
+
+    computedDiscount = monthlyGross * (tierPercent / 100)
+
+  Tier validation is enforced at creation and editing time:
+    - Every tier must have a "percent" field.
+    - The last tier must NOT have "maxExclusive" (so there is always a
+      catch-all bracket for any amount above the highest threshold).
+    - At least one tier must exist.
+
+  Who can set up the flexible plan:
+    - An Admin can assign a FLEXIBLE plan with tier definitions when creating
+      a new merchant account (MerchantCreate.jsx / POST /api/merchant-accounts).
+    - A Manager (or Admin) can change an existing merchant to a FLEXIBLE plan
+      and define/edit the tiers via the Merchant Management page
+      (MerchantManagement.jsx / PUT /api/merchant-profiles/{userId}).
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 3: At the end of the month, the system must calculate the    │
+  │              total discount to be either refunded via cheque or        │
+  │              credited to the next order.                               │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  The month-close settlement is triggered via:
+    POST /api/merchant-profiles/close-month
+    Body: { "yearMonth": "2026-03", "settlementMode": "APPLY_CREDIT" | "CHEQUE" }
+
+  The endpoint is available to MANAGER and ADMIN roles.
+
+  For each FLEXIBLE-plan merchant, the closeMonth() method:
+    a) Sums the grossTotal of non-cancelled orders placed in the month.
+    b) Resolves the applicable tier percentage from the merchant's tier JSON.
+    c) Calculates: computedDiscount = monthlyGross * (tierPercent / 100).
+    d) Depending on the settlement mode:
+       - APPLY_CREDIT: Adds the discount to the merchant's
+         flexibleDiscountCredit balance.  This credit is automatically
+         consumed on the merchant's next order(s): at order placement,
+         min(credit, grossTotal) is subtracted from the gross to produce
+         totalDue, and the consumed amount is recorded as
+         flexibleCreditApplied on the Order.
+       - CHEQUE: Adds the discount to the merchant's chequeRebatePending
+         balance.  This is a ledger figure for reporting purposes.
+         (Note: actual payment/cheque generation is out of scope for the
+         prototype — see Future Work.)
+    e) Records a MonthlyRebateSettlement row for audit.  Idempotency is
+       enforced by a UNIQUE constraint on (merchant_id, settlement_year_month)
+       in MySQL, so the same month cannot be settled twice for the same
+       merchant.
+
+  The MerchantManagement.jsx frontend provides a "Month Close" section with
+  a year-month picker and settlement-mode dropdown for triggering this.
+
+  Example: Merchant with tiers [1% < £1k, 2% £1k-£2k, 3% > £2k].
+    Monthly gross = £1,500.
+    Applicable tier: 2%.
+    computedDiscount = £1,500 * 2% = £30.00.
+    If APPLY_CREDIT mode: flexibleDiscountCredit += £30.
+    Next order of £100 gross: flexibleCreditApplied = £30, totalDue = £70.
 
 
--- 2.5  MANAGER MERCHANT MAINTENANCE (Brief §iii) ---------------------------
+──────────────────────────────────────────────────────────────────────────────
+ US4: Role-Based Access Control (RBAC)
+──────────────────────────────────────────────────────────────────────────────
 
-Status: COMPLETE
+Title:
+  "As an Administrator, I want to assign specific roles (Merchant, Admin,
+  Manager) to users so that they can only access the relevant functionality
+  that they require."
 
-"This user can also access the merchant accounts and alter their credit
-limits, discount plans and change the state of an 'in default' account to
-either 'normal' or 'suspended'."
+ACCEPTANCE CRITERIA AND HOW EACH IS MET:
 
-Implementation:
-  - GET /api/merchant-profiles         → List all merchant profiles (MANAGER/ADMIN)
-  - GET /api/merchant-profiles/{userId} → Get one profile (MANAGER/ADMIN)
-  - PUT /api/merchant-profiles/{userId} → Update profile (MANAGER/ADMIN)
-  - POST /api/merchant-profiles/close-month → Month-close settlement (MANAGER/ADMIN)
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 1: Merchant accounts must only have access to IPOS-SA-CAT   │
+  │              (Catalogue) and IPOS-SA-ORD (Orders).                    │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
 
-  Editable fields via PUT:
-    - creditLimit (must be > 0)
-    - discountPlanType (FIXED or FLEXIBLE, with corresponding params)
-    - standing (with transition rules)
+  Backend (SecurityConfig.java):
+    Merchants can access:
+      - GET /api/products/**   (Catalogue browsing)
+      - /api/orders/**         (Order placement and viewing)
+      - /api/auth/**           (Login, logout, session check)
+    All other endpoints return 403 Forbidden for MERCHANT role.
 
-  Standing transition rules (enforced in controller):
+  Frontend (rbac.js):
+    MERCHANT role is mapped to packages: IPOS-SA-CAT, IPOS-SA-ORD.
+    Navigation items are generated dynamically from this mapping.
+    Merchants see only "Catalogue" and "Place Order" in the navigation.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 2: Manager accounts must have access to IPOS-SA-RPRT        │
+  │              (Reporting) and Merchant account settings.               │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  Backend (SecurityConfig.java):
+    Managers can access everything Merchants can, plus:
+      - /api/merchant-profiles/**  (Merchant account management)
+      - /api/reports/**            (Reporting)
+
+  Frontend (rbac.js):
+    MANAGER role is mapped to: IPOS-SA-CAT, IPOS-SA-ORD, IPOS-SA-RPRT,
+    IPOS-SA-MER.  Managers see "Catalogue", "Place Order", "Reporting",
+    and "Merchants" in the navigation.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 3: Administrator accounts must have full access to all       │
+  │              packages, including IPOS-SA-ACC.                         │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  Backend (SecurityConfig.java):
+    ADMIN has access to all endpoints, including:
+      - /api/merchant-accounts/**  (Account creation — ADMIN only)
+      - /api/users/**              (User management — ADMIN only)
+      - All other endpoints accessible to MANAGER and MERCHANT roles
+
+  Frontend (rbac.js):
+    ADMIN role is mapped to: IPOS-SA-ACC, IPOS-SA-CAT, IPOS-SA-ORD,
+    IPOS-SA-RPRT, IPOS-SA-MER.  Admins see all navigation items including
+    "Accounts."
+
+  Implementation details:
+    - Three roles exist in User.Role enum: ADMIN, MANAGER, MERCHANT.
+    - Spring Security session-based authentication with BCrypt password
+      hashing.
+    - Backend URL-level rules in SecurityConfig.java enforce access per role.
+    - Frontend route guards in rbac.js prevent navigation to unauthorised
+      pages and dynamically filter the navigation menu.
+
+  Full endpoint access matrix:
+
+    Endpoint                          MERCHANT  MANAGER  ADMIN
+    ──────────────────────────────    ────────  ───────  ─────
+    /api/auth/login                   Public    Public   Public
+    /api/auth/logout, /api/auth/me    ✓         ✓        ✓
+    /api/merchant-accounts/**         ✗         ✗        ✓
+    /api/merchant-profiles/**         ✗         ✓        ✓
+    /api/users/**                     ✗         ✗        ✓
+    GET /api/products/**              ✓         ✓        ✓
+    POST/PUT/DELETE /api/products/**  ✗         ✗        ✓
+    /api/orders/**                    ✓         ✓        ✓
+    /api/reports/**                   ✗         ✓        ✓
+
+
+──────────────────────────────────────────────────────────────────────────────
+ US5: Managing Defaulted Accounts
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  "As a Manager, I want to manually restore a merchant's account from
+  'In Default' status so that they can access the functionality of their
+  account again after a long-term payment issue (e.g. longer than 30 days
+  without payment) is resolved."
+
+ACCEPTANCE CRITERIA AND HOW EACH IS MET:
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 1: The system must restrict the "Restore" action for         │
+  │              "In Default" accounts (delays >30 days) to Manager-level │
+  │              users only.                                              │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  In MerchantProfileController.update() (PUT /api/merchant-profiles/{userId}),
+  when a standing change from IN_DEFAULT is requested:
+
+    1. The authenticated user is retrieved from the SecurityContext:
+         Authentication auth = SecurityContextHolder.getContext()
+                                                     .getAuthentication();
+         User caller = userRepository.findByUsername(auth.getName())...
+
+    2. A role check ensures the caller is MANAGER (or ADMIN):
+         if (caller.getRole() != User.Role.MANAGER
+             && caller.getRole() != User.Role.ADMIN) {
+             return 403: "Only Managers can restore accounts from IN_DEFAULT."
+         }
+
+    3. The 30-day rule is enforced using the inDefaultSince timestamp:
+         - MerchantProfile stores an inDefaultSince field (Instant) that
+           records when the merchant was placed into IN_DEFAULT standing.
+         - The controller calculates the number of days since that timestamp:
+             long daysInDefault = Duration.between(
+                     profile.getInDefaultSince(), Instant.now()).toDays();
+         - If daysInDefault < 30, the request is rejected with a 400 error:
+             "Account has only been in default for X days. The minimum is
+              30 days before the standing can be changed."
+
+  This directly satisfies the acceptance criterion: the restore action is
+  restricted to Managers, and only for accounts that have been in default
+  for more than 30 days.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 2: A Manager must be able to change the status from          │
+  │              "In Default" to either "Normal" or "Suspended."          │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  The controller enforces strict transition rules:
+
     - FROM IN_DEFAULT → TO NORMAL     ✓  (Manager restores the account)
     - FROM IN_DEFAULT → TO SUSPENDED  ✓  (Manager suspends instead)
-    - Any other transition             ✗  (400 Bad Request)
+    - Any other transition            ✗  (400 Bad Request)
 
-Frontend: MerchantManagement.jsx provides:
-  - Table of all merchants with standing badges (colour-coded)
-  - Inline edit mode for credit limit, plan type/params, standing
-  - Month-close section with year-month picker and settlement mode selector
+  When a valid transition is performed:
+    - profile.setStanding(newStanding) applies the change.
+    - profile.setInDefaultSince(null) clears the default-tracking timestamp,
+      since the merchant is no longer in default.
+    - The profile is saved to the database.
+
+  The MerchantManagement.jsx frontend provides a standing dropdown in inline-
+  edit mode, allowing the Manager to select NORMAL or SUSPENDED.  The
+  MerchantStanding enum has three values: NORMAL, IN_DEFAULT, SUSPENDED.
+
+  Orders are blocked for merchants with IN_DEFAULT or SUSPENDED standing.
+  The OrderService.placeOrder() method checks the merchant's standing before
+  processing any order — non-NORMAL merchants receive a clear error message.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 3: The system must log which Manager performed the status    │
+  │              change.                                                   │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  A StandingChangeLog entity (standing_change_logs table) records an audit
+  trail for every standing transition.  Each row contains:
+
+    - merchant       (@ManyToOne → User): the merchant whose standing changed
+    - previousStanding (enum): the standing BEFORE the change
+    - newStanding      (enum): the standing AFTER the change
+    - changedBy      (@ManyToOne → User): the Manager/Admin who made the change
+    - changedAt      (Instant): timestamp of the change
+
+  The audit entry is created in MerchantProfileController.update() immediately
+  after the standing change is applied:
+
+    StandingChangeLog log = new StandingChangeLog();
+    log.setMerchant(profile.getUser());
+    log.setPreviousStanding(current);
+    log.setNewStanding(newStanding);
+    log.setChangedBy(caller);
+    log.setChangedAt(Instant.now());
+    standingChangeLogRepository.save(log);
+
+  The StandingChangeLogRepository provides:
+    - save() for writing new entries
+    - findByMerchantIdOrderByChangedAtDesc() for retrieving the audit history
+      of a specific merchant (newest first)
 
 
--- 2.6  ORDER PIPELINE ENHANCEMENTS -----------------------------------------
+──────────────────────────────────────────────────────────────────────────────
+ US6: Managing Accounts
+──────────────────────────────────────────────────────────────────────────────
 
-Status: COMPLETE
+Title:
+  "As a Manager, I want to be able to access merchant accounts and alter
+  their credit limits, discount plans."
+
+ACCEPTANCE CRITERIA AND HOW EACH IS MET:
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 1: The system must allow a manager to access merchant        │
+  │              accounts.                                                │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  Backend:
+    - GET /api/merchant-profiles returns a list of all merchant profiles as
+      MerchantProfileResponse DTOs.  Access is restricted to MANAGER and
+      ADMIN roles via SecurityConfig.java.
+    - GET /api/merchant-profiles/{userId} returns a single merchant profile.
+
+  Frontend:
+    - MerchantManagement.jsx is accessible via the "Merchants" navigation
+      link, visible to MANAGER and ADMIN roles (IPOS-SA-MER package).
+    - The page displays a table with columns: Name, Username, Status
+      (ACTIVE/INACTIVE), Standing (NORMAL/IN_DEFAULT/SUSPENDED), Credit
+      Limit, Discount Plan, Contact details, and an Actions column.
+    - Standing and account-status values are displayed as colour-coded badges.
+    - Contact details (email, phone, address) are shown for each merchant.
+    - The inDefaultSince date is displayed when a merchant is IN_DEFAULT.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ Criterion 2: The system must allow a manager to alter the credit       │
+  │              limits and discount plans of the merchant accounts.       │
+  │                                                                       │
+  │ Status: ✅ MET                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  Backend:
+    PUT /api/merchant-profiles/{userId} accepts an UpdateMerchantProfileRequest
+    with partial-update semantics (only non-null fields are applied).
+
+    Editable fields:
+      - creditLimit        (must be > 0)
+      - discountPlanType   (FIXED or FLEXIBLE, with corresponding parameters)
+      - fixedDiscountPercent (for FIXED plans, 0-100)
+      - flexibleTiersJson  (for FLEXIBLE plans, validated tier array)
+      - standing           (with transition rules per US5)
+      - contactEmail       (optional contact update)
+      - contactPhone       (optional contact update)
+      - addressLine        (optional contact update)
+
+    Validation is applied to each field:
+      - Credit limit must be > 0 or the request is rejected.
+      - Switching plan type requires the corresponding parameters (percent
+        for FIXED, valid tier JSON for FLEXIBLE).
+      - Standing changes follow the strict transition rules (US5).
+
+  Frontend:
+    MerchantManagement.jsx provides an inline-edit mode (triggered by the
+    "Edit" button) for each merchant row.  The edit form includes:
+      - Credit limit: numeric input (min 0.01, step 0.01)
+      - Plan type: dropdown (FIXED / FLEXIBLE) with dynamic sub-fields:
+        - FIXED: percentage input
+        - FLEXIBLE: tier JSON text input
+      - Standing: dropdown (NORMAL / IN_DEFAULT / SUSPENDED)
+      - Contact details: email, phone, and address inputs
+
+    The "Save" button sends only the changed fields in the PUT request.
+    The "Cancel" button discards unsaved changes.
+
+
+================================================================================
+ 4. SUPPORTING FEATURES (IMPLEMENTED ALONGSIDE THE USER STORIES)
+================================================================================
+
+── 4.1  ORDER PIPELINE ENHANCEMENTS ───────────────────────────────────────────
+
+These were built to support US2, US3, and US5 requirements within the order
+placement flow.
 
   a) Price snapshots: unitPriceAtOrder is saved on each OrderItem at order
-     time, so historical totals remain stable even if catalogue prices change.
+     time.  Historical totals remain stable even if catalogue prices change.
 
   b) Financial fields on Order: placedAt, grossTotal, fixedDiscountAmount,
      flexibleCreditApplied, totalDue — all persisted for audit.
 
   c) Standing guard: Orders are blocked for merchants whose standing is
-     IN_DEFAULT or SUSPENDED.  Clear error message returned.
+     IN_DEFAULT or SUSPENDED, returning a clear error message.
 
-  d) Credit limit enforcement: Sum of totalDue across non-cancelled orders +
-     new order's totalDue must not exceed the merchant's creditLimit.
+  d) Credit limit enforcement: The sum of totalDue across non-cancelled
+     orders plus the new order's totalDue must not exceed the merchant's
+     creditLimit.
 
   e) ORD-US1 (Merchant Isolation): If the authenticated user is a MERCHANT,
      the backend forces merchantId to the caller's own user ID regardless of
@@ -221,143 +627,225 @@ Status: COMPLETE
      totalDue) after a successful order placement.
 
 
--- 2.7  BOOTSTRAP AND SEED DATA ---------------------------------------------
+── 4.2  BOOTSTRAP AND SEED DATA ───────────────────────────────────────────────
 
-Status: COMPLETE
+DataBootstrap.java (controlled by ipos.bootstrap.enabled property) creates
+three default users on first startup:
 
-DataBootstrap.java creates three default users on first startup:
-  - admin    / admin123    / ADMIN
-  - manager  / manager123  / MANAGER
-  - merchant / merchant123 / MERCHANT
+  ┌──────────┬─────────────┬──────────┐
+  │ Username │ Password    │ Role     │
+  ├──────────┼─────────────┼──────────┤
+  │ admin    │ admin123    │ ADMIN    │
+  │ manager  │ manager123  │ MANAGER  │
+  │ merchant │ merchant123 │ MERCHANT │
+  └──────────┴─────────────┴──────────┘
 
 The merchant user also gets a MerchantProfile:
   - Credit limit: £10,000
-  - Plan type: FIXED
-  - Fixed discount: 5%
+  - Plan type: FIXED, 5% discount
   - Standing: NORMAL
+  - Account status: ACTIVE
   - Contact: merchant@example.com, 07700 900000, 1 Demo Street London
 
-This means the system is fully functional on a fresh database.
+Passwords are BCrypt-hashed before storage.  The bootstrap only runs if
+ipos.bootstrap.enabled=true and skips users that already exist.
 
 
--- 2.8  DOCUMENTATION --------------------------------------------------------
+── 4.3  DOCUMENTATION ─────────────────────────────────────────────────────────
 
-Status: COMPLETE
-
-  - docs/RBAC.md: Updated with IPOS-SA-MER package, merchant account model
-    section, full endpoint table, standing transition rules, discount plan
-    explanation, and updated future work checklist.
+  - RBAC.md (project root): Full access-control documentation with the
+    merchant account model, endpoint table, standing transition rules,
+    discount plan explanation, and future work checklist.
   - README.md: Updated project structure, database schema diagram (including
-    merchant_profiles and monthly_rebate_settlements tables), and
-    authentication section with merchant creation path examples.
+    merchant_profiles, monthly_rebate_settlements, standing_change_logs
+    tables), and authentication section with merchant creation examples.
+  - ACCprogress.txt (this file): Comprehensive documentation of what was
+    built, how each user story is met, and what remains.
 
 
 ================================================================================
- 3. WHAT IS LEFT TO DO (FUTURE WORK)
+ 5. TECHNICAL IMPLEMENTATION NOTES
 ================================================================================
 
--- 3.1  ACC-US2: Fixed Discount Plan Assignment (NOT YET STARTED) -----------
+── 5.1  MySQL Reserved Keyword — settlement_year_month ────────────────────────
 
-The brief implies discount plans could be shared/named entities rather than
-inline on each merchant profile.  Currently, the fixed discount percentage
-is stored directly on MerchantProfile.  A future iteration could:
-  - Create a DiscountPlan entity with named plans (e.g. "Gold 5%", "Silver 3%").
-  - Allow admins to define plans, and then assign them to merchants.
-  - This would make it easier to change a plan's rate and have it apply to
-    all merchants on that plan.
+  The MonthlyRebateSettlement entity originally used a column named
+  "year_month", which is a reserved keyword in MySQL 8.0.  This caused a
+  DDL failure on startup: "You have an error in your SQL syntax near
+  'year_month varchar(7) not null'".
 
--- 3.2  ACC-US3: Flexible Discount Plan Configuration (NOT YET STARTED) -----
+  Resolution: The database column was renamed to "settlement_year_month"
+  using @Column(name = "settlement_year_month").  The Java field name
+  remains "yearMonth" and the REST API still accepts/returns "yearMonth"
+  as "YYYY-MM".  The unique constraint was updated to reference the new
+  column name: @UniqueConstraint(columnNames = {"merchant_id",
+  "settlement_year_month"}).
 
-Currently, flexible tiers are stored as raw JSON.  A future iteration could:
-  - Create a dedicated UI screen for defining flexible plan templates.
-  - Store tiers as a normalised entity (DiscountTier with @OneToMany).
-  - Allow admins to create, edit, and preview tier structures.
-  - Show merchants which plan they are on and what their current month's
-    accrued discount would be.
 
--- 3.3  ACC-US5: Managing Defaulted Accounts (PARTIALLY DONE) ---------------
+── 5.2  AccountStatus vs MerchantStanding — Two Separate Concepts ─────────────
 
-What IS done:
-  - MerchantStanding enum: NORMAL, IN_DEFAULT, SUSPENDED.
-  - Manager can transition IN_DEFAULT → NORMAL or SUSPENDED.
-  - Orders are blocked for non-NORMAL merchants.
+  AccountStatus (INACTIVE / ACTIVE):
+    Represents the lifecycle state of the merchant account as described in
+    US1.  An account is INACTIVE until all mandatory fields are saved, then
+    becomes ACTIVE.  In the current atomic-creation implementation, accounts
+    are always created as ACTIVE (because incomplete accounts are rolled
+    back, not saved).  The INACTIVE state exists for a future draft-save
+    workflow.
 
-What is NOT done:
-  - Automatic transition TO IN_DEFAULT (e.g. when credit limit is exceeded
-    or invoices are overdue) — currently, only manual standing changes exist.
-  - Audit log for standing transitions (who changed it, when, why).
-  - Notification to the merchant when their account status changes.
+  MerchantStanding (NORMAL / IN_DEFAULT / SUSPENDED):
+    Represents the operational/financial state of the merchant as described
+    in the brief and US5.  A NORMAL merchant can trade; an IN_DEFAULT or
+    SUSPENDED merchant cannot place orders.  Transitions are governed by
+    the strict rules in MerchantProfileController.
 
--- 3.4  ACC-US6: Managing Accounts (PARTIALLY DONE) -------------------------
 
-What IS done:
-  - Manager can edit credit limits, discount plans, and standing.
-  - PUT /api/merchant-profiles/{userId} supports partial updates.
+── 5.3  Flexible Discount Credit Consumption ──────────────────────────────────
 
-What is NOT done:
-  - Manager access to view/edit basic merchant contact details.
-  - Dedicated merchant "settings" page that a manager uses vs the broader
-    account admin page.
-  - Richer search/filter on the merchant list (by standing, plan type, etc.).
+  When a FLEXIBLE-plan merchant places an order after a month-close
+  settlement has credited their account:
 
--- 3.5  Discount Plan Refinements -------------------------------------------
+    1. The system checks flexibleDiscountCredit on the merchant's profile.
+    2. creditToApply = min(flexibleDiscountCredit, grossTotal).
+    3. totalDue = grossTotal - creditToApply.
+    4. The order's flexibleCreditApplied field records how much credit was
+       used.
+    5. The profile's flexibleDiscountCredit is decremented by creditToApply.
+    6. The profile is saved.
 
-  - The flexible discount "cheque" path only records a ledger amount
-    (chequeRebatePending).  No actual payment integration or cheque
-    generation exists.  Replace with real accounts-payable workflow when
-    financial integration is scoped.
-  - The credit limit check is simplistic: sum of all non-cancelled totalDue.
-    A real system would subtract payments received, but payment tracking
-    (ORD-US6) is out of scope.
-
--- 3.6  Testing -------------------------------------------------------------
-
-  - Automated JUnit tests have been created (see section 4 below) but cover
-    the service and validation layers only.  Future work includes:
-    - Integration tests with @SpringBootTest against H2.
-    - Controller tests with @WebMvcTest and MockMvc.
-    - Repository tests with @DataJpaTest for custom JPQL queries.
-    - End-to-end browser tests for the frontend forms.
+  This ensures that credit earned from the flexible plan is automatically
+  deducted from subsequent orders, as specified in the brief: "deducted from
+  the value of the next order(s) by the same merchant."
 
 
 ================================================================================
- 4. TEST COVERAGE
+ 6. TEST COVERAGE
 ================================================================================
 
-A JUnit 5 test class has been created at:
+A JUnit 5 test class exists at:
   backend/src/test/java/com/ipos/service/MerchantAccountServiceTest.java
 
-It contains 15 unit tests covering:
-  - Merchant account creation (happy path, missing fields, duplicate username)
-  - MERCHANT role rejection via generic UserService
-  - Flexible tier JSON validation (valid, invalid, empty, wrong structure)
-  - Tier resolution (each bracket + catch-all)
-  - Fixed discount calculation at order placement
-  - Flexible credit consumption at order placement
-  - Standing guard (blocked when IN_DEFAULT or SUSPENDED)
-  - Credit limit enforcement
-  - ORD-US1 merchant isolation
+It contains 20 unit tests (all passing) using Mockito for dependency mocking.
 
-See the test file for detailed comments on each test and notes about what
-future tests will need to cover.
+Test configuration:
+  - backend/src/test/resources/application-test.properties configures an H2
+    in-memory database with create-drop DDL and bootstrap disabled.
+
+Test inventory:
+
+  Tests 1-5: MerchantAccountService.createMerchantAccount (ACC-US1)
+    1. Create merchant with FIXED plan — happy path
+    2. Create merchant with FLEXIBLE plan — happy path
+    3. Blank username is rejected
+    4. Duplicate username is rejected
+    5. Zero credit limit is rejected
+
+  Test 6: UserService rejects MERCHANT role (ACC-US1 guard)
+    6. UserService.createUser rejects MERCHANT role
+
+  Tests 7-10: Flexible tier JSON validation (Brief / US3)
+    7. Valid three-tier flexible JSON passes validation
+    8. Null/empty JSON is rejected
+    9. Tier missing "percent" field is rejected
+   10. Last tier with maxExclusive is rejected (must be catch-all)
+
+  Test 11: Flexible tier resolution (Brief / US3)
+   11. Tier resolution returns correct percentage for each bracket
+
+  Tests 12-15: OrderService.placeOrder — discount, standing, credit (US2/US3/US5)
+   12. FIXED discount is correctly calculated at order placement
+   13. FLEXIBLE plan — accumulated credit is consumed at order placement
+   14. IN_DEFAULT merchant is blocked from placing orders
+   15. ORD-US1: Merchant isolation + credit limit exceeded
+
+  Tests 16-20: US1 accountStatus, US5 inDefaultSince, StandingChangeLog
+   16. Newly created merchant has accountStatus = ACTIVE
+   17. inDefaultSince records when merchant entered IN_DEFAULT
+   18. StandingChangeLog entity records all audit fields
+   19. SUSPENDED merchant is also blocked from placing orders
+   20. AccountStatus enum contains INACTIVE and ACTIVE
+
+Future tests needed (documented in the test file):
+  - Controller-layer tests with @WebMvcTest and MockMvc
+  - Repository integration tests with @DataJpaTest and H2
+  - Month-close settlement end-to-end tests
+  - Standing transition controller tests (30-day rule, role enforcement)
+  - Frontend component tests (React Testing Library / Vitest)
 
 
 ================================================================================
- 5. FILE INVENTORY — ALL ACC-RELATED FILES
+ 7. WHAT IS LEFT TO DO (FUTURE WORK)
+================================================================================
+
+All six user stories are functionally COMPLETE.  The following items are
+enhancements or deeper coverage that would strengthen the implementation
+but are NOT required by any acceptance criterion:
+
+── 7.1  Automatic IN_DEFAULT Trigger ──────────────────────────────────────────
+
+  Currently, accounts can only be placed into IN_DEFAULT standing manually.
+  A production system would automatically transition merchants to IN_DEFAULT
+  when invoices are overdue or credit limits are exceeded for a configurable
+  period.  This requires a payment/invoice tracking system that is outside
+  the IPOS-SA-ACC scope.
+
+── 7.2  Cheque Settlement Integration ─────────────────────────────────────────
+
+  The flexible discount "cheque" settlement path records a ledger amount
+  (chequeRebatePending) but does not generate actual cheques or integrate
+  with a payment provider.  Replace with a real accounts-payable workflow
+  when financial integration is scoped.
+
+── 7.3  Named Discount Plan Entities ──────────────────────────────────────────
+
+  Currently, discount plan parameters are stored directly on MerchantProfile.
+  A future iteration could create a DiscountPlan entity with named templates
+  (e.g. "Gold 5%", "Silver 3%") that can be assigned to multiple merchants,
+  making it easier to change a plan's rate and have it apply globally.
+
+── 7.4  Normalised Flexible Tiers ─────────────────────────────────────────────
+
+  Flexible tiers are stored as JSON-in-a-column for prototype simplicity.
+  A production system would normalise this into a DiscountTier entity with
+  a proper @OneToMany relationship, enabling database-level querying and
+  reporting on tier structures.
+
+── 7.5  Merchant Notifications ────────────────────────────────────────────────
+
+  No notification system exists for informing merchants when their account
+  status or standing changes.  Email or in-app notifications would improve
+  the user experience.
+
+── 7.6  Search and Filtering ──────────────────────────────────────────────────
+
+  The merchant management page lists all merchants.  A richer implementation
+  would support filtering by standing, plan type, account status, and
+  credit limit range.
+
+── 7.7  Deeper Test Coverage ──────────────────────────────────────────────────
+
+  See the "Future tests needed" list in section 6 above.  The 20 existing
+  unit tests cover the service and entity layers; controller-layer,
+  repository, and frontend tests would provide fuller coverage.
+
+
+================================================================================
+ 8. FILE INVENTORY — ALL ACC-RELATED FILES
 ================================================================================
 
 Backend — New files:
   entity/MerchantProfile.java              Merchant business profile entity
   entity/MonthlyRebateSettlement.java      Month-close settlement records
+  entity/StandingChangeLog.java            Standing change audit log entity
   repository/MerchantProfileRepository.java    Profile queries
   repository/MonthlyRebateSettlementRepository.java  Settlement idempotency
+  repository/StandingChangeLogRepository.java  Audit log queries
   service/MerchantAccountService.java      Account creation + month-close
   dto/CreateMerchantAccountRequest.java    Validated creation DTO
-  dto/MerchantProfileResponse.java         Safe response DTO
-  dto/UpdateMerchantProfileRequest.java    Partial update DTO
+  dto/MerchantProfileResponse.java         Safe response DTO (incl. accountStatus, inDefaultSince)
+  dto/UpdateMerchantProfileRequest.java    Partial update DTO (incl. contact fields)
   dto/CloseMonthRequest.java               Month-close request DTO
   controller/MerchantAccountController.java    POST /api/merchant-accounts
-  controller/MerchantProfileController.java    GET/PUT + close-month
+  controller/MerchantProfileController.java    GET/PUT + close-month + audit
 
 Backend — Modified files:
   pom.xml                     Added validation, test, H2 dependencies
@@ -368,14 +856,18 @@ Backend — Modified files:
   service/UserService.java    MERCHANT rejection on generic create
   controller/OrderController.java  Passes auth context for ORD-US1
   security/SecurityConfig.java     New URL rules for merchant endpoints
-  config/DataBootstrap.java   Seeds MerchantProfile for default merchant
+  config/DataBootstrap.java   Seeds MerchantProfile with accountStatus
+
+Backend — Test files:
+  test/java/.../MerchantAccountServiceTest.java  20 JUnit 5 unit tests
+  test/resources/application-test.properties     H2 in-memory test config
 
 Frontend — New files:
   MerchantCreate.jsx          Admin merchant creation form
-  MerchantManagement.jsx      Manager/Admin profile management + month-close
+  MerchantManagement.jsx      Manager/Admin profile mgmt + month-close
 
 Frontend — Modified files:
-  auth/rbac.js                Added PACKAGE_MER, updated matrix
+  auth/rbac.js                Added PACKAGE_MER, updated access matrix
   api.js                      Added merchant/profile/closeMonth functions
   App.jsx                     Wired new pages, updated nav labels
   App.css                     Styles for merchant forms, badges, month-close
@@ -385,8 +877,9 @@ Frontend — Removed files:
   AccountsPlaceholder.jsx     Replaced by MerchantCreate.jsx
 
 Documentation:
-  docs/RBAC.md                Full rewrite with merchant model + endpoints
+  RBAC.md (project root)      Full rewrite with merchant model + endpoints
   README.md                   Updated structure, schema, auth sections
+  ACCprogress.txt             This progress report
 
 ================================================================================
  END OF PROGRESS REPORT

@@ -65,6 +65,9 @@ function MerchantManagement() {
       fixedDiscountPercent: profile.fixedDiscountPercent || "",
       flexibleTiersJson: profile.flexibleTiersJson || "",
       standing: profile.standing,
+      contactEmail: profile.contactEmail || "",
+      contactPhone: profile.contactPhone || "",
+      addressLine: profile.addressLine || "",
     });
     setMessage(null);
   };
@@ -97,6 +100,16 @@ function MerchantManagement() {
 
       if (editForm.standing !== original.standing) {
         payload.standing = editForm.standing;
+      }
+
+      if (editForm.contactEmail !== original.contactEmail) {
+        payload.contactEmail = editForm.contactEmail;
+      }
+      if (editForm.contactPhone !== original.contactPhone) {
+        payload.contactPhone = editForm.contactPhone;
+      }
+      if (editForm.addressLine !== original.addressLine) {
+        payload.addressLine = editForm.addressLine;
       }
 
       if (Object.keys(payload).length === 0) {
@@ -158,10 +171,11 @@ function MerchantManagement() {
             <tr>
               <th>Name</th>
               <th>Username</th>
+              <th>Status</th>
               <th>Standing</th>
               <th>Credit Limit</th>
               <th>Plan</th>
-              <th>Discount Credit</th>
+              <th>Contact</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -174,6 +188,11 @@ function MerchantManagement() {
                     <td>{p.name}</td>
                     <td>{p.username}</td>
                     <td>
+                      <span className={`standing-badge standing-${(p.accountStatus || "ACTIVE").toLowerCase()}`}>
+                        {p.accountStatus || "ACTIVE"}
+                      </span>
+                    </td>
+                    <td>
                       <select
                         value={editForm.standing}
                         onChange={(e) =>
@@ -184,6 +203,11 @@ function MerchantManagement() {
                         <option value="IN_DEFAULT">IN_DEFAULT</option>
                         <option value="SUSPENDED">SUSPENDED</option>
                       </select>
+                      {p.inDefaultSince && (
+                        <span style={{ display: "block", fontSize: "0.75rem", color: "#6b7280" }}>
+                          Since: {new Date(p.inDefaultSince).toLocaleDateString()}
+                        </span>
+                      )}
                     </td>
                     <td>
                       <input
@@ -228,7 +252,17 @@ function MerchantManagement() {
                         />
                       )}
                     </td>
-                    <td>£{Number(p.flexibleDiscountCredit).toFixed(2)}</td>
+                    <td>
+                      <input type="email" placeholder="Email" value={editForm.contactEmail}
+                        onChange={(e) => setEditForm({ ...editForm, contactEmail: e.target.value })}
+                        style={{ width: "140px", marginBottom: "0.25rem", display: "block" }} />
+                      <input type="tel" placeholder="Phone" value={editForm.contactPhone}
+                        onChange={(e) => setEditForm({ ...editForm, contactPhone: e.target.value })}
+                        style={{ width: "140px", marginBottom: "0.25rem", display: "block" }} />
+                      <input type="text" placeholder="Address" value={editForm.addressLine}
+                        onChange={(e) => setEditForm({ ...editForm, addressLine: e.target.value })}
+                        style={{ width: "140px", display: "block" }} />
+                    </td>
                     <td>
                       <button className="action-btn save" onClick={() => saveEdit(p.userId)}>
                         Save
@@ -244,9 +278,19 @@ function MerchantManagement() {
                     <td>{p.name}</td>
                     <td>{p.username}</td>
                     <td>
+                      <span className={`standing-badge standing-${(p.accountStatus || "ACTIVE").toLowerCase()}`}>
+                        {p.accountStatus || "ACTIVE"}
+                      </span>
+                    </td>
+                    <td>
                       <span className={`standing-badge standing-${p.standing.toLowerCase().replace("_", "-")}`}>
                         {p.standing}
                       </span>
+                      {p.inDefaultSince && (
+                        <span style={{ display: "block", fontSize: "0.75rem", color: "#6b7280" }}>
+                          Since: {new Date(p.inDefaultSince).toLocaleDateString()}
+                        </span>
+                      )}
                     </td>
                     <td>£{Number(p.creditLimit).toFixed(2)}</td>
                     <td>
@@ -255,7 +299,11 @@ function MerchantManagement() {
                         <span style={{ color: "#6b7280" }}> ({p.fixedDiscountPercent}%)</span>
                       )}
                     </td>
-                    <td>£{Number(p.flexibleDiscountCredit).toFixed(2)}</td>
+                    <td style={{ fontSize: "0.8rem", color: "#374151" }}>
+                      {p.contactEmail}<br />
+                      {p.contactPhone}<br />
+                      {p.addressLine}
+                    </td>
                     <td>
                       <button className="action-btn edit" onClick={() => startEdit(p)}>
                         Edit

@@ -34,10 +34,16 @@ import com.ipos.entity.MerchantProfile.DiscountPlanType;
 import com.ipos.entity.MerchantProfile.MerchantStanding;
 import com.ipos.entity.MonthlyRebateSettlement;
 import com.ipos.entity.MonthlyRebateSettlement.SettlementMode;
+import com.ipos.entity.StandingChangeLog;
+import com.ipos.entity.User;
 import com.ipos.repository.MerchantProfileRepository;
+import com.ipos.repository.StandingChangeLogRepository;
+import com.ipos.repository.UserRepository;
 import com.ipos.service.MerchantAccountService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,6 +53,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -58,11 +66,17 @@ public class MerchantProfileController {
 
     private final MerchantProfileRepository profileRepository;
     private final MerchantAccountService merchantAccountService;
+    private final StandingChangeLogRepository standingChangeLogRepository;
+    private final UserRepository userRepository;
 
     public MerchantProfileController(MerchantProfileRepository profileRepository,
-                                     MerchantAccountService merchantAccountService) {
+                                     MerchantAccountService merchantAccountService,
+                                     StandingChangeLogRepository standingChangeLogRepository,
+                                     UserRepository userRepository) {
         this.profileRepository = profileRepository;
         this.merchantAccountService = merchantAccountService;
+        this.standingChangeLogRepository = standingChangeLogRepository;
+        this.userRepository = userRepository;
     }
 
     /* GET /api/merchant-profiles → List all merchant profiles as DTOs. */
@@ -87,9 +101,14 @@ public class MerchantProfileController {
      * Updates mutable fields on a merchant's profile.  Only non-null fields
      * in the request body are applied (partial update semantics).
      *
-     * STANDING TRANSITION RULES (brief §iii):
+     * STANDING TRANSITION RULES (ACC-US5, brief §iii):
      *   Allowed: IN_DEFAULT → NORMAL, IN_DEFAULT → SUSPENDED.
-     *   Anything else returns 400.
+     *   Only allowed when the account has been in default for >30 days.
+     *   Restricted to MANAGER role only (US5: "Manager-level users only").
+     *   Every standing change is audit-logged with the actor's identity.
+     *
+     * CONTACT EDITS (ACC-US6):
+     *   Managers can also update contactEmail, contactPhone, addressLine.
      */
     @PutMapping("/{userId}")
     public ResponseEntity<?> update(@PathVariable Long userId,
@@ -98,6 +117,17 @@ public class MerchantProfileController {
             MerchantProfile profile = profileRepository.findByUserId(userId)
                     .orElseThrow(() -> new RuntimeException(
                             "Merchant profile not found for user " + userId));
+
+            /* ── Contact Details (ACC-US6) ────────────────────────────────── */
+            if (request.contactEmail() != null && !request.contactEmail().isBlank()) {
+                profile.setContactEmail(request.contactEmail());
+            }
+            if (request.contactPhone() != null && !request.contactPhone().isBlank()) {
+                profile.setContactPhone(request.contactPhone());
+            }
+            if (request.addressLine() != null && !request.addressLine().isBlank()) {
+                profile.setAddressLine(request.addressLine());
+            }
 
             /* ── Credit Limit ─────────────────────────────────────────────── */
             if (request.creditLimit() != null) {
@@ -144,7 +174,7 @@ public class MerchantProfileController {
                 }
             }
 
-            /* ── Standing Transition (brief §iii) ─────────────────────────── */
+            /* ── Standing Transition (ACC-US5, brief §iii) ────────────────── */
             if (request.standing() != null) {
                 MerchantStanding newStanding;
                 try {
@@ -158,16 +188,29 @@ public class MerchantProfileController {
 
                 MerchantStanding current = profile.getStanding();
 
-                /*
-                 * TRANSITION RULES:
-                 *   IN_DEFAULT → NORMAL    ✓  (Manager restores the account)
-                 *   IN_DEFAULT → SUSPENDED ✓  (Manager suspends instead of restoring)
-                 *   Anything else          ✗  (400 Bad Request)
-                 *
-                 * This matches the brief §iii: "change the state of an 'in default'
-                 * account to either 'normal' or 'suspended'."
-                 */
                 if (current != newStanding) {
+                    /*
+                     * ACC-US5: "restrict the Restore action to Manager-level users only."
+                     * Standing changes from IN_DEFAULT require MANAGER role.
+                     */
+                    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                    User caller = userRepository.findByUsername(auth.getName())
+                            .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+
+                    if (current == MerchantStanding.IN_DEFAULT
+                            && caller.getRole() != User.Role.MANAGER
+                            && caller.getRole() != User.Role.ADMIN) {
+                        return ResponseEntity.status(403)
+                                .body(Map.of("error",
+                                        "Only Managers can restore accounts from IN_DEFAULT."));
+                    }
+
+                    /*
+                     * TRANSITION RULES:
+                     *   IN_DEFAULT → NORMAL    ✓
+                     *   IN_DEFAULT → SUSPENDED ✓
+                     *   Anything else          ✗
+                     */
                     if (current != MerchantStanding.IN_DEFAULT) {
                         return ResponseEntity.badRequest()
                                 .body(Map.of("error",
@@ -180,7 +223,40 @@ public class MerchantProfileController {
                                 .body(Map.of("error",
                                         "From IN_DEFAULT, standing can only be changed to NORMAL or SUSPENDED."));
                     }
+
+                    /*
+                     * ACC-US5: 30-day rule — "long-term payment issue (e.g. longer
+                     * than 30 days without payment)."  The Manager can only restore
+                     * if the merchant has been in default for at least 30 days.
+                     */
+                    if (profile.getInDefaultSince() != null) {
+                        long daysInDefault = Duration.between(
+                                profile.getInDefaultSince(), Instant.now()).toDays();
+                        if (daysInDefault < 30) {
+                            return ResponseEntity.badRequest()
+                                    .body(Map.of("error",
+                                            "Account has only been in default for " + daysInDefault
+                                            + " days. The minimum is 30 days before the standing can be changed."));
+                        }
+                    }
+
+                    /* Apply the standing change. */
                     profile.setStanding(newStanding);
+
+                    /* Clear inDefaultSince when leaving IN_DEFAULT. */
+                    profile.setInDefaultSince(null);
+
+                    /*
+                     * ACC-US5 audit: "The system must log which Manager performed
+                     * the status change."
+                     */
+                    StandingChangeLog log = new StandingChangeLog();
+                    log.setMerchant(profile.getUser());
+                    log.setPreviousStanding(current);
+                    log.setNewStanding(newStanding);
+                    log.setChangedBy(caller);
+                    log.setChangedAt(Instant.now());
+                    standingChangeLogRepository.save(log);
                 }
             }
 

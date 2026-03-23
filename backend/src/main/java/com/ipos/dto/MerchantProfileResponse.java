@@ -16,6 +16,7 @@ package com.ipos.dto;
 
 import com.ipos.entity.MerchantProfile;
 import java.math.BigDecimal;
+import java.time.Instant;
 
 public record MerchantProfileResponse(
         Long userId,
@@ -28,7 +29,9 @@ public record MerchantProfileResponse(
         String discountPlanType,
         BigDecimal fixedDiscountPercent,
         String flexibleTiersJson,
+        String accountStatus,
         String standing,
+        Instant inDefaultSince,
         BigDecimal flexibleDiscountCredit,
         BigDecimal chequeRebatePending
 ) {
@@ -49,7 +52,9 @@ public record MerchantProfileResponse(
                 profile.getDiscountPlanType().name(),
                 profile.getFixedDiscountPercent(),
                 profile.getFlexibleTiersJson(),
+                profile.getAccountStatus() != null ? profile.getAccountStatus().name() : "ACTIVE",
                 profile.getStanding().name(),
+                profile.getInDefaultSince(),
                 profile.getFlexibleDiscountCredit(),
                 profile.getChequeRebatePending()
         );

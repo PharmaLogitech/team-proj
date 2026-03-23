@@ -60,6 +60,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Instant;
 
 @Entity
 @Table(name = "merchant_profiles")
@@ -146,16 +147,48 @@ public class MerchantProfile {
     @Column(name = "flexible_tiers_json", columnDefinition = "TEXT")
     private String flexibleTiersJson;
 
+    // ── Account Status (ACC-US1: Inactive → Active lifecycle) ────────────────
+
+    /*
+     * The activation status of this merchant account (ACC-US1).
+     *
+     * INACTIVE — Profile exists but mandatory details are incomplete or
+     *            the account has not yet been fully activated.  In the
+     *            current implementation, the transactional create path
+     *            always sets ACTIVE on success, so INACTIVE only appears
+     *            if a future draft-save flow is introduced.
+     * ACTIVE   — All mandatory fields are present; account is fully
+     *            operational and the merchant can trade (subject to
+     *            standing checks).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_status", nullable = false)
+    private AccountStatus accountStatus = AccountStatus.ACTIVE;
+
     // ── Account Standing (brief §iii — manager can alter) ────────────────────
 
     /*
      * The operational state of this merchant account.
      * NORMAL = can trade.  IN_DEFAULT / SUSPENDED = orders blocked.
-     * Only Managers (or Admins) can transition IN_DEFAULT → NORMAL | SUSPENDED.
+     * Only Managers can transition IN_DEFAULT → NORMAL | SUSPENDED (ACC-US5).
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private MerchantStanding standing;
+
+    // ── Default Tracking (ACC-US5 — 30-day rule) ──────────────────────────────
+
+    /*
+     * Timestamp of when this merchant was placed into IN_DEFAULT standing.
+     * Used to enforce the ACC-US5 rule: a Manager can only restore an
+     * account from IN_DEFAULT if the default period exceeds 30 days
+     * ("long-term payment issue, e.g. longer than 30 days").
+     *
+     * Set when standing transitions TO IN_DEFAULT; cleared when standing
+     * transitions AWAY from IN_DEFAULT.
+     */
+    @Column(name = "in_default_since")
+    private Instant inDefaultSince;
 
     // ── Flexible Discount Balances ───────────────────────────────────────────
 
@@ -186,6 +219,16 @@ public class MerchantProfile {
     // ── Enums ────────────────────────────────────────────────────────────────
 
     /*
+     * Account activation status (ACC-US1):
+     *   INACTIVE — Account created but not yet fully configured/activated.
+     *   ACTIVE   — All mandatory details provided; account is operational.
+     */
+    public enum AccountStatus {
+        INACTIVE,
+        ACTIVE
+    }
+
+    /*
      * The two discount plan types required by the brief (§i):
      *
      *   FIXED    — Same discount rate applied to every order at placement.
@@ -206,7 +249,6 @@ public class MerchantProfile {
      *
      * Transition rules (enforced in MerchantProfileController):
      *   Manager can change: IN_DEFAULT → NORMAL, IN_DEFAULT → SUSPENDED.
-     *   Other transitions require ADMIN or are handled by system rules.
      */
     public enum MerchantStanding {
         NORMAL,
@@ -315,5 +357,21 @@ public class MerchantProfile {
 
     public void setChequeRebatePending(BigDecimal chequeRebatePending) {
         this.chequeRebatePending = chequeRebatePending;
+    }
+
+    public AccountStatus getAccountStatus() {
+        return accountStatus;
+    }
+
+    public void setAccountStatus(AccountStatus accountStatus) {
+        this.accountStatus = accountStatus;
+    }
+
+    public Instant getInDefaultSince() {
+        return inDefaultSince;
+    }
+
+    public void setInDefaultSince(Instant inDefaultSince) {
+        this.inDefaultSince = inDefaultSince;
     }
 }

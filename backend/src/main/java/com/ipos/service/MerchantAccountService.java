@@ -191,6 +191,7 @@ public class MerchantAccountService {
         profile.setAddressLine(addressLine);
         profile.setCreditLimit(creditLimit);
         profile.setDiscountPlanType(planType);
+        profile.setAccountStatus(MerchantProfile.AccountStatus.ACTIVE);
         profile.setStanding(MerchantStanding.NORMAL);
         profile.setFlexibleDiscountCredit(BigDecimal.ZERO);
         profile.setChequeRebatePending(BigDecimal.ZERO);

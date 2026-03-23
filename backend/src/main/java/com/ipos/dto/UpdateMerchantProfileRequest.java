@@ -3,8 +3,8 @@
  * ║  WHAT: Request DTO for updating a merchant's profile (ACC-US6, brief §iii). ║
  * ║                                                                              ║
  * ║  WHY:  Managers and Admins can alter a merchant's credit limit, discount    ║
- * ║        plan, and standing.  This DTO carries only the mutable fields.       ║
- * ║        All fields are optional — only non-null fields are applied.          ║
+ * ║        plan, standing, and contact details.  All fields are optional —      ║
+ * ║        only non-null fields are applied (partial update semantics).         ║
  * ║                                                                              ║
  * ║  STANDING TRANSITIONS (brief §iii):                                          ║
  * ║        Managers may change: IN_DEFAULT → NORMAL, IN_DEFAULT → SUSPENDED.   ║
@@ -20,5 +20,8 @@ public record UpdateMerchantProfileRequest(
         String discountPlanType,
         BigDecimal fixedDiscountPercent,
         String flexibleTiersJson,
-        String standing
+        String standing,
+        String contactEmail,
+        String contactPhone,
+        String addressLine
 ) {}

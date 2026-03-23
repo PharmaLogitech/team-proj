@@ -32,11 +32,13 @@
 package com.ipos.service;
 
 import com.ipos.entity.MerchantProfile;
+import com.ipos.entity.MerchantProfile.AccountStatus;
 import com.ipos.entity.MerchantProfile.DiscountPlanType;
 import com.ipos.entity.MerchantProfile.MerchantStanding;
 import com.ipos.entity.Order;
 import com.ipos.entity.OrderItem;
 import com.ipos.entity.Product;
+import com.ipos.entity.StandingChangeLog;
 import com.ipos.entity.User;
 import com.ipos.repository.MerchantProfileRepository;
 import com.ipos.repository.MonthlyRebateSettlementRepository;
@@ -55,6 +57,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -607,6 +611,135 @@ class MerchantAccountServiceTest {
         assertTrue(ex.getMessage().contains("credit limit"),
                 "Should fail due to credit limit, not 'merchant not found' — proving isolation worked");
         verify(orderRepository, never()).save(any());
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  TESTS 16-20: US1 accountStatus, US5 inDefaultSince, StandingChangeLog
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /*
+     * TEST 16: Created merchant accounts have accountStatus = ACTIVE.
+     *
+     * Verifies: ACC-US1 acceptance criterion — "Once all details are saved,
+     * account status should update to Active."
+     */
+    @Test
+    @DisplayName("ACC-US1: Newly created merchant has accountStatus = ACTIVE")
+    void createMerchantAccount_setsAccountStatusActive() {
+        when(userRepository.findByUsername("statustest")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User u = invocation.getArgument(0);
+            u.setId(30L);
+            return u;
+        });
+        when(profileRepository.save(any(MerchantProfile.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        MerchantProfile result = merchantAccountService.createMerchantAccount(
+                "Status Test", "statustest", "pass123",
+                "s@e.com", "07700", "1 Street",
+                new BigDecimal("5000.00"),
+                DiscountPlanType.FIXED, new BigDecimal("5.00"), null);
+
+        assertEquals(AccountStatus.ACTIVE, result.getAccountStatus(),
+                "Newly created account must have ACTIVE status per ACC-US1");
+    }
+
+    /*
+     * TEST 17: MerchantProfile.inDefaultSince tracks when standing became IN_DEFAULT.
+     *
+     * Verifies: the field can be set and read back, and is used by the controller
+     * to enforce the 30-day rule (ACC-US5).
+     */
+    @Test
+    @DisplayName("ACC-US5: inDefaultSince records when merchant entered IN_DEFAULT")
+    void merchantProfile_inDefaultSince_tracksDefaultStart() {
+        MerchantProfile profile = new MerchantProfile();
+        Instant defaultStart = Instant.now().minus(45, ChronoUnit.DAYS);
+        profile.setInDefaultSince(defaultStart);
+        profile.setStanding(MerchantStanding.IN_DEFAULT);
+
+        assertEquals(defaultStart, profile.getInDefaultSince());
+        assertEquals(MerchantStanding.IN_DEFAULT, profile.getStanding());
+
+        profile.setStanding(MerchantStanding.NORMAL);
+        profile.setInDefaultSince(null);
+        assertNull(profile.getInDefaultSince(),
+                "inDefaultSince should be cleared when leaving IN_DEFAULT");
+    }
+
+    /*
+     * TEST 18: StandingChangeLog entity correctly records audit fields.
+     *
+     * Verifies: the audit entity stores merchant, previous/new standing,
+     * the actor who made the change, and the timestamp (ACC-US5: "log which
+     * Manager performed the status change").
+     */
+    @Test
+    @DisplayName("ACC-US5: StandingChangeLog records all audit fields")
+    void standingChangeLog_recordsAllFields() {
+        User merchant = new User("Merchant", "m1", "hash", User.Role.MERCHANT);
+        merchant.setId(40L);
+        User manager = new User("Manager", "mgr", "hash", User.Role.MANAGER);
+        manager.setId(41L);
+
+        StandingChangeLog log = new StandingChangeLog();
+        log.setMerchant(merchant);
+        log.setPreviousStanding(MerchantStanding.IN_DEFAULT);
+        log.setNewStanding(MerchantStanding.NORMAL);
+        log.setChangedBy(manager);
+        Instant now = Instant.now();
+        log.setChangedAt(now);
+
+        assertEquals(merchant, log.getMerchant());
+        assertEquals(MerchantStanding.IN_DEFAULT, log.getPreviousStanding());
+        assertEquals(MerchantStanding.NORMAL, log.getNewStanding());
+        assertEquals(manager, log.getChangedBy());
+        assertEquals(now, log.getChangedAt());
+        assertEquals(User.Role.MANAGER, log.getChangedBy().getRole(),
+                "Audit must record the MANAGER who performed the change");
+    }
+
+    /*
+     * TEST 19: SUSPENDED merchant is blocked from placing orders (like IN_DEFAULT).
+     *
+     * Verifies: both non-NORMAL standings are blocked by OrderService, not just
+     * IN_DEFAULT (complements test 14 which tested IN_DEFAULT only).
+     */
+    @Test
+    @DisplayName("ACC-US5: SUSPENDED merchant is also blocked from placing orders")
+    void placeOrder_suspendedStanding_blocked() {
+        Long merchantId = 50L;
+        MerchantProfile profile = buildMerchantWithProfile(
+                merchantId, DiscountPlanType.FIXED, new BigDecimal("10000"));
+        profile.setStanding(MerchantStanding.SUSPENDED);
+
+        OrderItem item = new OrderItem();
+        item.setProduct(new Product());
+        item.getProduct().setId(300L);
+        item.setQuantity(1);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                orderService.placeOrder(merchantId, List.of(item), merchantId, User.Role.MERCHANT));
+
+        assertTrue(ex.getMessage().contains("SUSPENDED"),
+                "Error message should mention SUSPENDED standing");
+        verify(orderRepository, never()).save(any());
+    }
+
+    /*
+     * TEST 20: AccountStatus enum has exactly INACTIVE and ACTIVE values.
+     *
+     * Verifies: the US1 lifecycle states exist in the enum and cover both
+     * acceptance criteria states.
+     */
+    @Test
+    @DisplayName("ACC-US1: AccountStatus enum contains INACTIVE and ACTIVE")
+    void accountStatus_enumValues() {
+        AccountStatus[] values = AccountStatus.values();
+        assertEquals(2, values.length);
+        assertEquals(AccountStatus.INACTIVE, AccountStatus.valueOf("INACTIVE"));
+        assertEquals(AccountStatus.ACTIVE, AccountStatus.valueOf("ACTIVE"));
     }
 }
 

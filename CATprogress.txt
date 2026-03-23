@@ -1,0 +1,633 @@
+================================================================================
+ IPOS-SA-CAT — Electronic Catalogue and Inventory Control — Progress Report
+================================================================================
+
+Generated     : 2026-03-21
+Epic          : Electronic Catalogue and Inventory Control
+Companion doc : ACCprogress.txt (same directory — Account Management)
+
+This document maps each CAT user story (US1–US10) to the current codebase,
+states what is DONE vs NOT DONE, and lists detailed implementation work
+remaining.  File paths are relative to the project root unless noted.
+
+
+================================================================================
+ 1. EPIC SUMMARY
+================================================================================
+
+Goal (from your epic description):
+  InfoPharma maintains an up-to-date electronic catalogue, manages stock
+  levels, and monitors inventory thresholds so products remain available.
+
+Current state (high level):
+  • A minimal "products" catalogue exists in the database with description,
+    unit price, and availability count.
+  • Any authenticated user can list products (GET).  Only ADMIN may POST
+    new products (per Spring Security).  Stock is decremented when orders
+    are placed (ORD integration).
+  • Most CAT-specific user stories are NOT YET implemented: there is no
+    admin UI for catalogue CRUD, no search API, no delete/update endpoints,
+    no delivery recording, no minimum stock / low-stock warnings or reports,
+    and the merchant view still exposes raw stock counts.
+
+Estimated completion for CAT epic (prototype):  Most stories require new
+backend endpoints, entity fields, validation, audit/logging, and frontend
+screens — see per-story sections below.
+
+
+================================================================================
+ 2. REFERENCE — KEY FILES TODAY (CAT-RELATED)
+================================================================================
+
+Backend
+  entity/Product.java
+    Fields: id (Long, generated), description (String), price (BigDecimal),
+            availabilityCount (Integer → column availability_count).
+    No: separate business "Product ID" / SKU, no minStockThreshold, no
+        soft-delete / discontinued flag, no Bean Validation on entity.
+
+  repository/ProductRepository.java
+    Extends JpaRepository<Product, Long> only — no custom query methods
+    (e.g. search by description, price range).
+
+  service/ProductService.java
+    findAll(), findById(Long), save(Product) — thin pass-through to repo.
+
+  controller/ProductController.java
+    GET  /api/products  → list all
+    POST /api/products  → create (raw Product body, no DTO validation)
+    NOTE: No PUT, no DELETE, no /search routes (comments acknowledge future
+          CAT-US3/US4/US5 work).
+
+  security/SecurityConfig.java
+    GET  /api/products/**  → authenticated (all roles)
+    POST/PUT/DELETE        → ADMIN only (PUT/DELETE allowed by security but
+                             not implemented on ProductController)
+
+  service/OrderService.java
+    On order placement: validates sufficient availabilityCount, then decrements
+    stock per line item (transactional rollback on failure).
+
+Frontend
+  src/Catalogue.jsx
+    Fetches GET /api/products, displays table: ID, Description, Price,
+    In Stock (raw availabilityCount).  Same view for all roles — no role-
+    specific masking for merchants.
+
+  src/api.js
+    getProducts(), createProduct() — no updateProduct, deleteProduct,
+    searchProducts, recordDelivery, etc.
+
+  src/OrderForm.jsx (IPOS-SA-ORD, but affects CAT-US6)
+    Product dropdown shows: description, price, and "X in stock" using
+    availabilityCount — merchants see exact stock levels.
+
+  src/ReportingPlaceholder.jsx + /api/reports/**
+    Reporting is a stub; no low-stock report endpoint or UI (CAT-US10).
+
+
+================================================================================
+ 3. USER STORY STATUS MATRIX
+================================================================================
+
+  US1  Catalogue Initialization          PARTIAL (implicit schema only)
+  US2  Product Creation                  PARTIAL (API only; weak validation)
+  US3  Product Discontinuation/Removal   NOT STARTED
+  US4  Product Data Maintenance          NOT STARTED
+  US5  Internal Product Search           NOT STARTED
+  US6  Merchant Catalogue Browsing       PARTIAL (read-only OK; stock masking NO)
+  US7  Stock Delivery Recording          NOT STARTED
+  US8  Minimum Stock Thresholds          NOT STARTED
+  US9  Automated Low-Stock Warnings      NOT STARTED
+  US10 Low-Stock Reporting (RPRT)        NOT STARTED
+
+
+================================================================================
+ 4. DETAILED USER STORY BREAKDOWN
+================================================================================
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US1 — Catalogue Initialization
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As an Administrator, I want to create a new electronic catalogue (Database)
+  so that pharmaceutical products can be stored and managed in the system.
+
+ACCEPTANCE CRITERION 1:
+  "The system must allow the creation of a new catalogue only if one does
+   not exist already."
+
+  STATUS: ⚠️  INTERPRETATION-DEPENDENT / MOSTLY IMPLICIT
+
+  DONE TODAY:
+    • The application uses a single JPA entity mapped to table "products".
+      Hibernate ddl-auto creates the table when the app starts against an
+      empty database — there is no second "catalogue" to duplicate in the
+      relational model.
+
+  NOT DONE / GAP:
+    • There is NO explicit administrator workflow or API such as
+      "POST /api/catalogue/initialize" that checks "catalogue exists?" and
+      returns 409 if already present.
+    • If your marker expects a visible "create catalogue" action in the UI
+      or a dedicated Catalogue aggregate (separate from Product rows), that
+      is NOT implemented.
+
+  WORK TO COMPLETE (if strict compliance needed):
+    • Decide model: single implicit catalogue (document as acceptable per
+      brief footnote: optional catalogue creation) OR add a catalogue
+      metadata table (e.g. catalogues: id, name, created_at) with at-most-one
+      active row enforced by app logic or DB constraint.
+    • If required: Admin-only endpoint + optional UI "Initialize catalogue"
+      that fails when products table already has rows or when catalogue
+      record exists.
+
+
+ACCEPTANCE CRITERION 2:
+  "The system must initialize the catalogue with the appropriate fields such
+   as Product ID, Description, Unit Price, and Availability with the correct
+   data types (e.g. int, String)."
+
+  STATUS: ⚠️  PARTIAL — FIELD MAPPING DIFFERS FROM WORDING
+
+  DONE TODAY:
+    • description  → String  ✅
+    • unit price   → BigDecimal (mapped to DECIMAL in DB) ✅  (preferred over
+                     double for money; acceptable vs "numeric type")
+    • availability → Integer (availabilityCount) ✅
+
+  GAPS VS STORY WORDING:
+    • "Product ID" in the story often implies a business identifier (SKU)
+      separate from the database primary key.  Today the only identifier is
+      id: Long, auto-generated by the database — you cannot assign a custom
+      product code at creation time via the API as specified in US2/US4.
+
+  WORK TO COMPLETE:
+    • Add optional or required productCode / sku field (String) with UNIQUE
+      constraint, OR document that surrogate Long id is the Product ID for
+      the prototype (and align US2 "unique Product ID" with that).
+    • Add Jakarta Bean Validation on DTOs (@NotBlank, @DecimalMin, @Min(0))
+      aligned with US2/US4.
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US2 — Product Creation
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As an Administrator, I want to add new products to the catalogue so that
+  they are available for merchants to order.
+
+Description:
+  Requires Product ID, Description, Unit Price, and Availability.
+
+ACCEPTANCE CRITERION 1:
+  "The system must enforce a unique Product ID for every new entry."
+
+  STATUS: ❌  NOT MET AS STATED
+
+  TODAY:
+    • Database primary key id is unique by definition (auto-increment).
+    • There is NO separate user-supplied Product ID field; duplicates of
+      description are allowed.
+
+  WORK TO COMPLETE:
+    • Introduce business key (e.g. productCode) with @Column(unique=true)
+      OR enforce uniqueness on description if that is your chosen ID.
+    • Repository method existsBy… + service check before save; return 409
+      Conflict with clear message.
+
+
+ACCEPTANCE CRITERION 2:
+  "The system must validate that the Unit Price is greater than zero."
+
+  STATUS: ❌  NOT ENFORCED IN API LAYER
+
+  TODAY:
+    • ProductController passes body straight to ProductService.save with no
+      @Valid DTO.  Null or zero price can be persisted depending on client.
+
+  WORK TO COMPLETE:
+    • CreateProductRequest DTO with @NotNull @DecimalMin("0.01") on price
+      (or "> 0" as per story).
+    • Validate in service and return 400 with message if invalid.
+
+
+ACCEPTANCE CRITERION 3:
+  "The system must validate that Availability is not a negative value."
+
+  STATUS: ❌  NOT ENFORCED IN API LAYER
+
+  TODAY:
+    • No @Min(0) on entity or DTO for availabilityCount.
+
+  WORK TO COMPLETE:
+    • DTO: @NotNull @Min(0) on availability (story says "not negative";
+      confirm whether zero is allowed for "listed but out of stock").
+
+ADDITIONAL GAP (common expectation):
+  "Administrator adds products"
+    • api.js exports createProduct(), but there is NO React admin page wired
+      in App.jsx for catalogue management — products are expected to be added
+      via API client, Postman, or SQL.
+
+  WORK TO COMPLETE:
+    • Admin-only page e.g. CatalogueAdmin.jsx: form fields for ID/code,
+      description, price, availability; call POST /api/products; show
+      validation errors from backend.
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US3 — Product Discontinuation / Removal
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As an Administrator, I want to remove products from the catalogue so that
+  merchants cannot order discontinued or out of stock items.
+
+ACCEPTANCE CRITERION 1:
+  "The system must prompt for a confirmation Yes/No before a product is
+   deleted."
+
+  STATUS: ❌  NOT STARTED (no delete flow at all)
+
+  TODAY:
+    • ProductController has no @DeleteMapping.
+    • No admin UI for delete.
+
+  WORK TO COMPLETE:
+    • Frontend: delete button opens modal/dialog "Are you sure? Yes / No";
+      only on Yes call DELETE API.
+    • Alternatively document that browser confirm() meets "prompt" for
+      prototype (weaker UX).
+
+
+ACCEPTANCE CRITERION 2:
+  "The system must log the deletion activity, including which user performed
+   the action."
+
+  STATUS: ❌  NOT STARTED
+
+  TODAY:
+    • No ProductDeletionLog entity or generic audit table for catalogue.
+
+  WORK TO COMPLETE:
+    • New entity (e.g. product_deletion_logs): productId/code snapshot,
+      description snapshot, deletedBy (User FK), deletedAt.
+    • On successful delete, insert log row in same transaction.
+    • Mirror pattern used for ACC StandingChangeLog if desired.
+
+
+DESIGN NOTE (brief alignment):
+  Hard DELETE breaks historical order line references unless orders store
+  product snapshot (you already have unitPriceAtOrder on order items — check
+  if product FK allows null or if soft-delete is better).  Consider:
+    • Soft delete: discontinued flag + hide from merchant catalogue; OR
+    • Hard delete only when no order history (enforce in service).
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US4 — Product Data Maintenance
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As an Administrator, I want to update existing product details so that the
+  catalogue information remains up to date and accurate for merchants.
+
+ACCEPTANCE CRITERION 1:
+  "The system must prevent the modification of an existing Product ID."
+
+  STATUS: ❌  NOT STARTED (no update endpoint)
+
+  TODAY:
+    • No PUT /api/products/{id}.
+
+  WORK TO COMPLETE:
+    • PUT endpoint with UpdateProductRequest that omits id OR ignores id in
+      body; only allow changing description, price, availability (and later
+      min threshold).  Path variable id is the sole identifier.
+
+
+ACCEPTANCE CRITERION 2:
+  "The system must validate that any updated price or stock level
+   (Availability) remains non-negative."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • @DecimalMin on price (> 0 if business rule matches US2).
+    • @Min(0) on availability updates.
+    • api.js: add updateProduct(id, payload).
+    • Admin UI: edit row or edit form on catalogue management page.
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US5 — Internal Product Search
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As an Administrator, I want to search for products using multiple criteria
+  so that I can quickly locate products and see all of the information
+  relating to the product.
+
+ACCEPTANCE CRITERION 1:
+  "The system must allow searching by Product ID, Description, or Price Range."
+
+  STATUS: ❌  NOT STARTED
+
+  TODAY:
+    • Only GET /api/products returns full list — client-side filter possible
+      but not implemented; no server-side search.
+
+  WORK TO COMPLETE:
+    • Backend: GET /api/products/search?productId=&q=&minPrice=&maxPrice=
+      (combine criteria with AND logic; document semantics).
+    • Repository: findById (already), findByDescriptionContainingIgnoreCase,
+      findByPriceBetween, or @Query for combined filter.
+    • Admin UI: search form + results table (reuse same row layout as full
+      catalogue).
+
+
+ACCEPTANCE CRITERION 2:
+  "The system must display a 'No products found' message if no matches exist."
+
+  STATUS: ❌  NOT STARTED (depends on US5 UI)
+
+  WORK TO COMPLETE:
+    • Frontend: if API returns empty array, show explicit message.
+    • Backend can return 200 + [] (preferred) vs 404 — stay consistent.
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US6 — Merchant Catalogue Browsing
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As a Merchant, I want to search and view the product catalogue so that I
+  can identify items I wish to purchase.
+
+ACCEPTANCE CRITERION 1:
+  "The system must provide Read-Only access, the merchant cannot edit any
+   catalogue details."
+
+  STATUS: ✅  MOSTLY MET (backend); ⚠️  UI is shared
+
+  TODAY:
+    • Spring Security: MERCHANT cannot POST/PUT/DELETE /api/products.
+    • Catalogue.jsx has no edit/delete controls — display only.
+
+  MINOR GAP:
+    • Same Catalogue component is shown to Admin/Manager — they also see
+      read-only table here (admin mutations would be a separate page — OK).
+
+
+ACCEPTANCE CRITERION 2:
+  "The system must hide the products stock levels from the merchant view
+   (only showing 'Available' or 'Out of Stock')."
+
+  STATUS: ❌  NOT MET
+
+  TODAY:
+    • Catalogue.jsx column "In Stock" shows raw availabilityCount.
+    • OrderForm.jsx option text includes "(X in stock)" for every role,
+      including merchants.
+
+  WORK TO COMPLETE:
+    • Option A (frontend-only): if user.role === 'MERCHANT', map
+      availabilityCount > 0 → "Available", else "Out of Stock"; omit numeric
+      column.
+    • Option B (cleaner API): DTO MerchantProductResponse without stock count,
+      only availabilityStatus enum; keep full Product for admin endpoints.
+    • Apply same masking in OrderForm dropdown for MERCHANT.
+
+
+ACCEPTANCE CRITERION 3:
+  "The system must allow for products to be searched from incomplete words
+   (para -> can search for paracetamol)"
+
+  STATUS: ❌  NOT MET
+
+  TODAY:
+    • No search input on Catalogue.jsx.
+
+  WORK TO COMPLETE:
+    • Backend: description ILIKE %keyword% (or full-text if required).
+    • Frontend: search box debounced → call search API or filter — merchants
+      should use substring/partial match behaviour.
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US7 — Stock Delivery Recording
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As an Administrator, I want to record new stock deliveries so that inventory
+  levels are automatically increased.
+
+ACCEPTANCE CRITERION 1:
+  "The system must record the delivery date and the quantity received."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • New entity StockDelivery (or GoodsReceipt): id, productId FK,
+      deliveryDate (LocalDate/Instant), quantityReceived, optional supplier
+      ref, createdBy.
+    • POST /api/products/{id}/deliveries or POST /api/stock/deliveries.
+
+
+ACCEPTANCE CRITERION 2:
+  "The system must automatically increment the Availability of the product by
+   the delivery quantity."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • In transactional service: load Product, add quantity to
+      availabilityCount, save delivery row.
+
+
+ACCEPTANCE CRITERION 3:
+  "The system must reject any delivery quantity equal to or less than zero."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • DTO @Min(1) on quantityReceived.
+
+NOTE:
+  Today stock only INCREASES implicitly if someone POSTs a product with
+  higher availability or manually updates DB — there is no delivery workflow.
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US8 — Minimum Stock Thresholds
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As an Administrator, I want to set minimum stock thresholds for each item
+  so that the system can flag when a product reaches low enough levels of
+  stock.
+
+ACCEPTANCE CRITERION 1:
+  "The system must allow a specific minimum stock threshold value to be
+   assigned to each unique Product ID."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • Add column min_stock_threshold (Integer, NOT NULL, default 0 or nullable
+      meaning "no threshold").
+    • Expose on create/update DTOs and admin UI.
+
+
+ACCEPTANCE CRITERION 2:
+  "The system must validate that threshold values are not negative."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • @Min(0) on threshold field.
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US9 — Automated Low-Stock Warnings
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As an Administrator, I want to receive automated UI warnings when stock
+  falls below thresholds set so that I can trigger the re-ordering process
+  to replenish the stock.
+
+ACCEPTANCE CRITERION 1:
+  "The system must automatically flag a product in the UI when Current
+   Availability < Threshold."
+
+  STATUS: ❌  NOT STARTED (depends on US8)
+
+  WORK TO COMPLETE:
+    • Admin catalogue view: badge/icon/row class when
+      availabilityCount < minStockThreshold.
+    • Optional: global banner "N products below minimum stock" after login
+      for ADMIN (story says "every time they use IPOS-SA" in full brief —
+      interpret as persistent warning on catalogue/dashboard).
+
+
+ACCEPTANCE CRITERION 2:
+  "The warning must include the Product ID, Description and current stock
+   level."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • Ensure flagged row or tooltip shows id (or product code), description,
+      availabilityCount.
+
+
+NOTE:
+  Managers may also need visibility per full case-study brief; your story
+  text says Administrator — confirm if MANAGER should see the same warnings.
+
+
+──────────────────────────────────────────────────────────────────────────────
+ CAT-US10 — Low-Stock Reporting
+──────────────────────────────────────────────────────────────────────────────
+
+Title:
+  As a Manager, I want to generate a low-stock report so that I can oversee
+  inventory trends and plan supplier orders.
+
+ACCEPTANCE CRITERION 1:
+  "The system must generate a report listing all products currently below
+   their defined thresholds."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • Backend: GET /api/reports/low-stock or /api/products/low-stock returning
+      list of products where availabilityCount < minStockThreshold (and
+      threshold defined).
+    • Requires US8 fields in DB.
+
+
+ACCEPTANCE CRITERION 2:
+  "The report must reflect real-time catalogue data at the moment of
+   generation."
+
+  STATUS: ❌  NOT STARTED
+
+  WORK TO COMPLETE:
+    • Read-only query at request time (no stale cache).
+
+
+ACCEPTANCE CRITERION 3:
+  "The report must be accessible through the IPOS-SA-RPRT package."
+
+  STATUS: ❌  NOT STARTED
+
+  TODAY:
+    • frontend/src/ReportingPlaceholder.jsx is a stub.
+    • /api/reports/** is secured for MANAGER + ADMIN but no report controllers
+      implemented (verify with grep — no ReportController in project).
+
+  WORK TO COMPLETE:
+    • Add Reporting UI section "Low stock report" inside RPRT page (or
+      dedicated sub-route).
+    • Wire Manager role to fetch report API; optional print stylesheet or
+      window.print() for "printed when required" from broader brief.
+
+
+================================================================================
+ 5. SUGGESTED IMPLEMENTATION ORDER (ENGINEERING)
+================================================================================
+
+  1. US2 hardening — DTOs + validation + unique business ID + Admin UI create
+     (unblocks real data entry without Postman).
+
+  2. US4 + US3 — PUT + DELETE (with confirmation + audit log); decide soft vs
+     hard delete for order history.
+
+  3. US5 — Admin search API + UI.
+
+  4. US6 — Merchant stock masking + partial search on merchant catalogue view.
+
+  5. US8 — min threshold column + admin edit.
+
+  6. US7 — delivery entity + increment stock + admin UI.
+
+  7. US9 — low-stock highlighting + optional dashboard banner for admin.
+
+  8. US10 — low-stock report API + integrate into Reporting (RPRT) page.
+
+  9. US1 — Only if assessors require explicit "create catalogue" operation;
+     otherwise document single-table implicit catalogue as acceptable optional
+     path per case-study wording.
+
+
+================================================================================
+ 6. TESTING GAPS (FUTURE)
+================================================================================
+
+  • No dedicated ProductServiceTest / ProductControllerTest in repo (unlike
+    MerchantAccountServiceTest for ACC).
+  • Future tests should cover: validation on create/update, unique constraint,
+    delete audit log, search query combinations, delivery increment atomicity,
+    merchant DTO never exposes stock count, low-stock query correctness.
+
+
+================================================================================
+ 7. CROSS-PACKAGE NOTES
+================================================================================
+
+  • ORD (OrderService) already decreases availabilityCount — any new stock
+    rules (reservations, back-order) must stay consistent with CAT-US7.
+  • RPRT package is shared with other reports; low-stock is one slice of
+    CAT-US10 only.
+  • Currency display: Catalogue.jsx uses "$" prefix for price — brief uses £;
+    align formatting with OrderForm (which uses £) for consistency.
+
+
+================================================================================
+ END OF CAT PROGRESS REPORT
+================================================================================

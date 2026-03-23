@@ -134,6 +134,7 @@ public class DataBootstrap implements ApplicationRunner {
                     profile.setCreditLimit(new BigDecimal("10000.00"));
                     profile.setDiscountPlanType(DiscountPlanType.FIXED);
                     profile.setFixedDiscountPercent(new BigDecimal("5.00"));
+                    profile.setAccountStatus(MerchantProfile.AccountStatus.ACTIVE);
                     profile.setStanding(MerchantStanding.NORMAL);
                     profile.setFlexibleDiscountCredit(BigDecimal.ZERO);
                     profile.setChequeRebatePending(BigDecimal.ZERO);
