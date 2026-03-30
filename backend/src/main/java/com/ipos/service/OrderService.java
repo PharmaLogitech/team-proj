@@ -81,6 +81,43 @@ public class OrderService {
     }
 
     /*
+     * getOrderStatus — Retrieve the current status of a single order.
+     *
+     * Design-document test cases T7-T11 specify:
+     *   - orderId must not be null or blank (T10, T11).
+     *   - orderId must refer to an existing order (T9).
+     *   - On success, the enum status is returned (T7, T8).
+     *
+     * The external interface accepts a String orderId so that callers (other
+     * subsystems, front-end, test harnesses) do not need to know the internal
+     * Long primary key format.  If the string cannot be parsed as a number,
+     * the order simply doesn't exist → "Order not found".
+     *
+     * @param orderId  String representation of the order's numeric ID.
+     * @return         The current OrderStatus enum value.
+     * @throws RuntimeException  If orderId is null/blank, or no such order exists.
+     */
+    public Order.OrderStatus getOrderStatus(String orderId) {
+        if (orderId == null) {
+            throw new RuntimeException("Order ID cannot be null.");
+        }
+        if (orderId.isBlank()) {
+            throw new RuntimeException("Invalid order ID.");
+        }
+
+        Long id;
+        try {
+            id = Long.parseLong(orderId.trim());
+        } catch (NumberFormatException e) {
+            throw new RuntimeException("Order not found: " + orderId);
+        }
+
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
+        return order.getStatus();
+    }
+
+    /*
      * ══════════════════════════════════════════════════════════════════════════
      *  THE CORE BUSINESS OPERATION: Place an Order
      * ══════════════════════════════════════════════════════════════════════════
