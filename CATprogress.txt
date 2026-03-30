@@ -51,7 +51,12 @@ Backend
     (e.g. search by description, price range).
 
   service/ProductService.java
-    findAll(), findById(Long), save(Product) — thin pass-through to repo.
+    findAll(), findById(Long), save(Product), delete(Long),
+    increaseStock(Long, int), decreaseStock(Long, int).
+    increaseStock / decreaseStock validate quantity > 0 and quantity ≤
+    MAX_STOCK_DELTA (10,000,000) before touching the repo.  delete checks
+    existsById before calling deleteById.  These methods are the service-layer
+    stubs for CAT-US3 (delete) and CAT-US7 (stock delivery recording).
 
   controller/ProductController.java
     GET  /api/products  → list all
@@ -92,11 +97,11 @@ Frontend
 
   US1  Catalogue Initialization          PARTIAL (implicit schema only)
   US2  Product Creation                  PARTIAL (API only; weak validation)
-  US3  Product Discontinuation/Removal   NOT STARTED
+  US3  Product Discontinuation/Removal   PARTIAL (service delete() method + unit tests; no controller endpoint or confirmation prompt yet)
   US4  Product Data Maintenance          NOT STARTED
   US5  Internal Product Search           NOT STARTED
   US6  Merchant Catalogue Browsing       PARTIAL (read-only OK; stock masking NO)
-  US7  Stock Delivery Recording          NOT STARTED
+  US7  Stock Delivery Recording          PARTIAL (service increaseStock() + decreaseStock() methods + unit tests; no controller endpoint yet)
   US8  Minimum Stock Thresholds          NOT STARTED
   US9  Automated Low-Stock Warnings      NOT STARTED
   US10 Low-Stock Reporting (RPRT)        NOT STARTED

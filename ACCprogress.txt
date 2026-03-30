@@ -823,9 +823,10 @@ but are NOT required by any acceptance criterion:
 
 ── 7.7  Deeper Test Coverage ──────────────────────────────────────────────────
 
-  See the "Future tests needed" list in section 6 above.  The 20 existing
-  unit tests cover the service and entity layers; controller-layer,
-  repository, and frontend tests would provide fuller coverage.
+  See the "Future tests needed" list in section 6 above.  The 57 existing
+  tests (across 5 test classes + 1 suite) cover the service and entity layers
+  for ACC, ORD, and CAT packages; controller-layer, repository, and frontend
+  tests would provide fuller coverage.
 
 
 ================================================================================
@@ -859,7 +860,12 @@ Backend — Modified files:
   config/DataBootstrap.java   Seeds MerchantProfile with accountStatus
 
 Backend — Test files:
-  test/java/.../MerchantAccountServiceTest.java  20 JUnit 5 unit tests
+  test/java/.../MerchantAccountServiceTest.java  20 JUnit 5 unit tests (ACC-US1/US5, discount plans, ORD standing + credit)
+  test/java/.../ProductServiceTest.java          18 JUnit 5 unit tests (getCatalogue T12-T13, increaseStock T17-T22, decreaseStock T23-T27, findById, save, delete)
+  test/java/.../OrderServiceTest.java             5 JUnit 5 sub-system tests (getOrderStatus T7-T11; IPOS-SA-ORD provided interface)
+  test/java/.../PaymentServiceTest.java           7 JUnit 5 sub-system tests (recordPayment T1-T6; IPOS-SA-ORD provided interface)
+  test/java/.../EmailServiceTest.java             7 JUnit 5 system tests (sendEmail T28-T34; required external email interface)
+  test/java/com/ipos/IposTestSuite.java           JUnit Platform @Suite running all 57 tests as one batch
   test/resources/application-test.properties     H2 in-memory test config
 
 Frontend — New files:

@@ -73,7 +73,7 @@ import static org.mockito.Mockito.*;
  * tests start in milliseconds.
  */
 @ExtendWith(MockitoExtension.class)
-class MerchantAccountServiceTest {
+public class MerchantAccountServiceTest {
 
     /* ── Mocked dependencies ──────────────────────────────────────────────── */
 
