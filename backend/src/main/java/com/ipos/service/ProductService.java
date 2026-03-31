@@ -119,7 +119,14 @@ public class ProductService {
             throw new RuntimeException("Quantity exceeds system limits.");
         }
         Product product = findById(id);
-        product.setAvailabilityCount(product.getAvailabilityCount() + quantity);
+        Integer currentStock = product.getAvailabilityCount();
+        if (currentStock == null || currentStock < 0) {
+            throw new RuntimeException("Current stock is invalid for product id: " + id);
+        }
+        if (currentStock > Integer.MAX_VALUE - quantity) {
+            throw new RuntimeException("Stock increase would exceed maximum allowed inventory for product id: " + id);
+        }
+        product.setAvailabilityCount(currentStock + quantity);
         return productRepository.save(product);
     }
 
