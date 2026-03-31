@@ -6,10 +6,11 @@
  * ║  WHY:  The service layer holds catalogue validations and inventory operations  ║
  * ║        (e.g., stock increase/decrease), keeping controllers thin.            ║
  * ║                                                                              ║
- * ║  METHODS (non-trivial class — 6 public methods):                            ║
+ * ║  METHODS (non-trivial class — 7 public methods):                            ║
  * ║        findAll()           — Return the full catalogue (CAT-US1/US6).       ║
  * ║        findById()          — Look up a single product (throws if absent).   ║
- * ║        save()              — Create or update a product.                    ║
+ * ║        createProduct()     — Validate CAT-US2 request and create product.   ║
+ * ║        save()              — Legacy helper create/update path.              ║
  * ║        delete()            — Remove a product from the catalogue (CAT-US3). ║
  * ║        increaseStock()     — Record a delivery and add units (CAT-US7).     ║
  * ║        decreaseStock()     — Deduct units; throws if insufficient stock.    ║

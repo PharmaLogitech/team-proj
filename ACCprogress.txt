@@ -867,7 +867,7 @@ Backend — Test files:
   test/java/.../OrderServiceTest.java             5 JUnit 5 sub-system tests (getOrderStatus T7-T11; IPOS-SA-ORD provided interface)
   test/java/.../PaymentServiceTest.java           7 JUnit 5 sub-system tests (recordPayment T1-T6; IPOS-SA-ORD provided interface)
   test/java/.../EmailServiceTest.java             7 JUnit 5 system tests (sendEmail T28-T34; required external email interface)
-  test/java/com/ipos/IposTestSuite.java           JUnit Platform @Suite running all 57 tests as one batch
+  test/java/com/ipos/IposTestSuite.java           JUnit Platform @Suite running the 57 brief-required tests as one batch (when suite is run directly)
   test/resources/application-test.properties     H2 in-memory test config
 
 Frontend — New files:
@@ -888,6 +888,16 @@ Documentation:
   RBAC.md (project root)      Full rewrite with merchant model + endpoints
   README.md                   Updated structure, schema, auth sections
   ACCprogress.txt             This progress report
+
+================================================================================
+ 9. AI USAGE NOTE (PR #20)
+================================================================================
+
+AI tools were used to accelerate test scaffolding, edge-case generation, and
+documentation consistency checks for PR #20.  All generated suggestions were
+manually reviewed, adjusted to match the brief/user stories, and validated by
+running the full backend test suite locally (`mvn test`) before opening/marking
+the PR ready for review.
 
 ================================================================================
  END OF PROGRESS REPORT

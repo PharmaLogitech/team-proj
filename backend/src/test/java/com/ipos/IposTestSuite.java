@@ -1,22 +1,22 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: JUnit 5 Test Suite for IPOS-SA — runs all tests as a batch.         ║
+ * ║  WHAT: JUnit 5 Test Suite for IPOS-SA brief-required tests.                ║
  * ║                                                                              ║
  * ║  WHY:  The brief requires a test suite (set of tests run as a batch).       ║
- * ║        Running the suite exercises all test classes in one go, producing    ║
- * ║        a combined pass/fail report for the Implementation Report.           ║
+ * ║        This suite runs the selected brief-required test classes together,    ║
+ * ║        producing a combined pass/fail report for the Implementation Report.  ║
  * ║                                                                              ║
  * ║  HOW TO RUN:                                                                 ║
- * ║        mvn test                         (runs all backend test classes)     ║
- * ║        mvn test -pl backend             (from project root; same as above)  ║
- * ║        Right-click IposTestSuite.java → Run in IntelliJ / Eclipse to run   ║
- * ║                                         this suite as a batch               ║
+ * ║        mvn test                         (runs all *Test classes)            ║
+ * ║        mvn test -pl backend             (from project root; same behavior)  ║
+ * ║        Run IposTestSuite.java directly in IDE to execute this suite only.   ║
+ * ║                                                                              ║
  * ║  TEST CLASSES INCLUDED:                                                      ║
  * ║                                                                              ║
  * ║  ── Unit Tests (non-trivial classes with 5+ methods) ─────────────────────  ║
  * ║    MerchantAccountServiceTest  — 20 tests covering ACC-US1/US5, discount    ║
  * ║                                   plans, OrderService standing + credit     ║
- * ║    ProductServiceTest          — 16 tests covering getCatalogue (T12-T13),  ║
+ * ║    ProductServiceTest          — 18 tests covering getCatalogue (T12-T13),  ║
  * ║                                   increaseStock (T17-T22),                  ║
  * ║                                   decreaseStock (T23-T27)                   ║
  * ║                                                                              ║
@@ -27,7 +27,7 @@
  * ║  ── System Tests (required interface to external email subsystem) ─────────  ║
  * ║    EmailServiceTest            — 7 tests covering sendEmail (T28-T34)       ║
  * ║                                                                              ║
- * ║  TOTAL: 55 tests across 5 test classes                                      ║
+ * ║  TOTAL: 57 tests across 5 test classes                                      ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos;
@@ -42,7 +42,7 @@ import org.junit.platform.suite.api.Suite;
 
 /*
  * @Suite      — Marks this class as a JUnit Platform test suite.
- * @SelectClasses — Lists the test classes to include in the suite.
+ * @SelectClasses — Lists the brief-required test classes included in the suite.
  *                  Each class will run with its own lifecycle (@BeforeEach, etc.)
  *                  exactly as if run individually.
  */
