@@ -51,13 +51,15 @@ Backend
     (e.g. search by description, price range).
 
   service/ProductService.java
-    findAll(), findById(Long), save(Product), delete(Long),
+    createProduct(CreateProductRequest), findAll(), findById(Long),
+    save(Product) [legacy/internal helper], delete(Long),
     increaseStock(Long, int), decreaseStock(Long, int).
-    increaseStock / decreaseStock validate quantity > 0 and quantity ≤
-    MAX_STOCK_DELTA (10,000,000) before touching the repo.  delete checks
-    existsById before calling deleteById.  These methods are the service-layer
-    stubs for CAT-US3 (delete) and CAT-US7 (stock delivery recording).
-
+    createProduct(CreateProductRequest) is the main CAT-US2 entrypoint used
+    by ProductController when creating new products.  increaseStock /
+    decreaseStock validate quantity > 0 and quantity ≤ MAX_STOCK_DELTA
+    (10,000,000) before touching the repo.  delete checks existsById before
+    calling deleteById.  These methods are the service-layer stubs for
+    CAT-US3 (delete) and CAT-US7 (stock delivery recording).
   controller/ProductController.java
     GET  /api/products  → list all
     POST /api/products  → create (raw Product body, no DTO validation)
