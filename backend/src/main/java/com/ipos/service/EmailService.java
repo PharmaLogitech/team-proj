@@ -34,12 +34,14 @@ import java.util.regex.Pattern;
 public class EmailService {
 
     /*
-     * RFC 5321-simplified email pattern.
-     * Accepts standard addresses (user@domain.com) and special characters in
-     * the local part (e.g. Invoice#1*).  Rejects:
+     * RFC 5321-simplified email pattern used for basic validation.
+     * Accepts standard addresses (e.g. user@domain.com). Rejects:
      *   - Missing @ or domain part.
      *   - Consecutive dots in the domain (e.g. domain...com).
      *   - Empty local part.
+     *
+     * Note: This is intentionally permissive in the set of allowed characters
+     * for the local part and is not a full RFC-compliant validator.
      */
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
             "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
