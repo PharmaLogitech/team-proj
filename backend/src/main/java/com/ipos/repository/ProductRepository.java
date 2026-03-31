@@ -20,5 +20,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProductRepository extends JpaRepository<Product, Long> {
-    // Inherits: save, findById, findAll, deleteById, count, etc.
+
+    /** Product codes are stored in uppercase — pass normalized code. */
+    boolean existsByProductCode(String productCode);
 }

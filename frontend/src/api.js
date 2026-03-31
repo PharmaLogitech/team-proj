@@ -26,6 +26,30 @@ import { fetchWithAuth } from "./auth/AuthContext.jsx";
 
 const API_BASE = "/api";
 
+async function parseResponseBody(response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+}
+
+function errorMessageFromBody(body, response) {
+  if (body && typeof body === "object") {
+    if (typeof body.message === "string" && body.message) return body.message;
+    if (typeof body.error === "string" && body.error) return body.error;
+    if (Array.isArray(body.errors) && body.errors.length > 0) {
+      const first = body.errors[0];
+      if (typeof first === "string") return first;
+      if (first?.defaultMessage) return first.defaultMessage;
+      if (first?.message) return first.message;
+    }
+  }
+  return response.statusText || "Request failed";
+}
+
 /* ── Products ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -45,19 +69,54 @@ export async function getProducts() {
 
 /**
  * Create a new product.
- * POST /api/products with a JSON body.
+ * POST /api/products with a JSON body (CAT-US2).
  *
- * ACCESS: ADMIN only (CAT-US2 — Product Creation).
+ * ACCESS: ADMIN only.
  */
 export async function createProduct(product) {
   const response = await fetchWithAuth(`${API_BASE}/products`, {
     method: "POST",
-    body: JSON.stringify(product),
+    body: JSON.stringify({
+      productCode: product.productCode,
+      description: product.description,
+      price: product.price,
+      availabilityCount: product.availabilityCount,
+    }),
   });
+  const body = await parseResponseBody(response);
   if (!response.ok) {
-    throw new Error("Failed to create product");
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
+}
+
+/* ── Catalogue (CAT-US1) ─────────────────────────────────────────────────── */
+
+/**
+ * GET /api/catalogue/status — whether the catalogue has been registered.
+ * ACCESS: ADMIN only.
+ */
+export async function getCatalogueStatus() {
+  const response = await fetchWithAuth(`${API_BASE}/catalogue/status`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch catalogue status");
   }
   return response.json();
+}
+
+/**
+ * POST /api/catalogue/initialize — register the catalogue once.
+ * ACCESS: ADMIN only.
+ */
+export async function initializeCatalogue() {
+  const response = await fetchWithAuth(`${API_BASE}/catalogue/initialize`, {
+    method: "POST",
+  });
+  const body = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
 }
 
 /* ── Users ────────────────────────────────────────────────────────────────── */

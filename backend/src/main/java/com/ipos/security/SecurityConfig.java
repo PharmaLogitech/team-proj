@@ -291,6 +291,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/users/**").hasRole("ADMIN")
 
                 /*
+                 * IPOS-SA-CAT — Catalogue initialization (CAT-US1). ADMIN only.
+                 */
+                .requestMatchers("/api/catalogue/**").hasRole("ADMIN")
+
+                /*
                  * IPOS-SA-CAT (Catalogue) — Read access for all authenticated users.
                  * Merchants browse read-only (CAT-US6), Admins manage (CAT-US2/US4).
                  */

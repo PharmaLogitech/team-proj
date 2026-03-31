@@ -29,6 +29,13 @@ public class Product {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Business Product ID (SKU). Stored in UPPERCASE for case-insensitive uniqueness (CAT-US1/US2).
+     * May be null only for legacy rows until {@link com.ipos.config.CatalogueLifecycleRunner} backfills.
+     */
+    @Column(name = "product_code", length = 64, unique = true)
+    private String productCode;
+
     private String description;
 
     /*
@@ -52,7 +59,11 @@ public class Product {
     public Product() {
     }
 
-    public Product(String description, BigDecimal price, Integer availabilityCount) {
+    /**
+     * @param productCode business Product ID; null allowed only for transient / legacy rows
+     */
+    public Product(String productCode, String description, BigDecimal price, Integer availabilityCount) {
+        this.productCode = productCode;
         this.description = description;
         this.price = price;
         this.availabilityCount = availabilityCount;
@@ -66,6 +77,14 @@ public class Product {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public String getProductCode() {
+        return productCode;
+    }
+
+    public void setProductCode(String productCode) {
+        this.productCode = productCode;
     }
 
     public String getDescription() {
