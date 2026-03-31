@@ -7,10 +7,10 @@
  * ║        a combined pass/fail report for the Implementation Report.           ║
  * ║                                                                              ║
  * ║  HOW TO RUN:                                                                 ║
- * ║        mvn test                         (all tests including this suite)    ║
- * ║        mvn test -pl backend             (from project root)                 ║
- * ║        Right-click IposTestSuite.java → Run in IntelliJ / Eclipse          ║
- * ║                                                                              ║
+ * ║        mvn test                         (runs all backend test classes)     ║
+ * ║        mvn test -pl backend             (from project root; same as above)  ║
+ * ║        Right-click IposTestSuite.java → Run in IntelliJ / Eclipse to run   ║
+ * ║                                         this suite as a batch               ║
  * ║  TEST CLASSES INCLUDED:                                                      ║
  * ║                                                                              ║
  * ║  ── Unit Tests (non-trivial classes with 5+ methods) ─────────────────────  ║
