@@ -2,8 +2,9 @@
  * ╔══════════════════════════════════════════════════════════════════════════════╗
  * ║  WHAT: Service class for Product-related business logic (IPOS-SA-CAT).      ║
  * ║                                                                              ║
- * ║  WHY:  Having a service layer means validations and inventory operations     ║
- * ║        (e.g., stock increase/decrease) live here, not in the controller.    ║
+ * 
+ * ║  WHY:  The service layer holds catalogue validations and inventory operations  ║
+ * ║        (e.g., stock increase/decrease), keeping controllers thin.            ║
  * ║                                                                              ║
  * ║  METHODS (non-trivial class — 6 public methods):                            ║
  * ║        findAll()           — Return the full catalogue (CAT-US1/US6).       ║
@@ -21,11 +22,16 @@
  */
 package com.ipos.service;
 
+import com.ipos.dto.CreateProductRequest;
 import com.ipos.entity.Product;
 import com.ipos.repository.ProductRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class ProductService {
@@ -33,9 +39,11 @@ public class ProductService {
     static final int MAX_STOCK_DELTA = 10_000_000;
 
     private final ProductRepository productRepository;
+    private final CatalogueService catalogueService;
 
-    public ProductService(ProductRepository productRepository) {
+    public ProductService(ProductRepository productRepository, CatalogueService catalogueService) {
         this.productRepository = productRepository;
+        this.catalogueService = catalogueService;
     }
 
     /* ── IPOS-SA-CAT: Catalogue browsing ─────────────────────────────────── */
@@ -51,6 +59,32 @@ public class ProductService {
 
     /* ── IPOS-SA-CAT: Catalogue management (ADMIN) ───────────────────────── */
 
+    /**
+     * Creates a product with validated, unique business Product ID (CAT-US2).
+     */
+    @Transactional
+    public Product createProduct(CreateProductRequest request) {
+        String code = request.getProductCode().trim().toUpperCase(Locale.ROOT);
+        if (code.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Product ID cannot be blank");
+        }
+        if (productRepository.existsByProductCode(code)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Product ID already exists: " + code);
+        }
+        catalogueService.ensureCatalogueMetadataExists();
+
+        Product product = new Product();
+        product.setProductCode(code);
+        product.setDescription(request.getDescription().trim());
+        product.setPrice(request.getPrice());
+        product.setAvailabilityCount(request.getAvailabilityCount());
+        return productRepository.save(product);
+    }
+
+    /**
+     * Legacy/simple save used by unit tests.
+     * Controllers in production should prefer {@link #createProduct(CreateProductRequest)}.
+     */
     public Product save(Product product) {
         return productRepository.save(product);
     }

@@ -23,6 +23,7 @@
 package com.ipos.service;
 
 import com.ipos.entity.Product;
+import com.ipos.repository.CatalogueMetadataRepository;
 import com.ipos.repository.ProductRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,17 +47,23 @@ public class ProductServiceTest {
     @Mock
     private ProductRepository productRepository;
 
+    @Mock
+    private CatalogueMetadataRepository catalogueMetadataRepository;
+
     private ProductService productService;
+    private CatalogueService catalogueService;
 
     @BeforeEach
     void setUp() {
-        productService = new ProductService(productRepository);
+        // Use real CatalogueService (with mocked repo) so Mockito doesn't need to mock CatalogueService itself.
+        catalogueService = new CatalogueService(catalogueMetadataRepository);
+        productService = new ProductService(productRepository, catalogueService);
     }
 
     /* ── Helper ──────────────────────────────────────────────────────────── */
 
     private Product makeProduct(Long id, String description, int stock) {
-        Product p = new Product(description, new BigDecimal("10.00"), stock);
+        Product p = new Product("SKU-" + id, description, new BigDecimal("10.00"), stock);
         p.setId(id);
         return p;
     }

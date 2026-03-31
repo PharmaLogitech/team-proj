@@ -433,7 +433,7 @@ public class MerchantAccountServiceTest {
      * Helper: builds a product with a given price and stock.
      */
     private Product buildProduct(Long id, BigDecimal price, int stock) {
-        Product product = new Product("Product " + id, price, stock);
+        Product product = new Product("P-" + id, "Product " + id, price, stock);
         product.setId(id);
         when(productRepository.findById(id)).thenReturn(Optional.of(product));
         return product;

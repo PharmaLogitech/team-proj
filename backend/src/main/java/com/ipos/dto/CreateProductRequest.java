@@ -1,0 +1,60 @@
+package com.ipos.dto;
+
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.math.BigDecimal;
+
+/**
+ * Request body for creating a catalogue product (CAT-US2).
+ * Product codes are normalized to uppercase in the service layer for case-insensitive uniqueness.
+ */
+public class CreateProductRequest {
+
+    @NotBlank(message = "Product ID is required")
+    private String productCode;
+
+    @NotBlank(message = "Description is required")
+    private String description;
+
+    @NotNull(message = "Unit price is required")
+    @DecimalMin(value = "0.01", inclusive = true, message = "Unit price must be greater than zero")
+    private BigDecimal price;
+
+    @NotNull(message = "Availability is required")
+    @Min(value = 0, message = "Availability must not be negative")
+    private Integer availabilityCount;
+
+    public String getProductCode() {
+        return productCode;
+    }
+
+    public void setProductCode(String productCode) {
+        this.productCode = productCode;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public BigDecimal getPrice() {
+        return price;
+    }
+
+    public void setPrice(BigDecimal price) {
+        this.price = price;
+    }
+
+    public Integer getAvailabilityCount() {
+        return availabilityCount;
+    }
+
+    public void setAvailabilityCount(Integer availabilityCount) {
+        this.availabilityCount = availabilityCount;
+    }
+}
