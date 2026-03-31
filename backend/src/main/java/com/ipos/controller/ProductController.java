@@ -21,8 +21,10 @@
  */
 package com.ipos.controller;
 
+import com.ipos.dto.CreateProductRequest;
 import com.ipos.entity.Product;
 import com.ipos.service.ProductService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,9 +49,9 @@ public class ProductController {
         return productService.findAll();
     }
 
-    /* POST /api/products → Creates a new product from the JSON request body. */
+    /* POST /api/products → Creates a new product (CAT-US2). */
     @PostMapping
-    public Product create(@RequestBody Product product) {
-        return productService.save(product);
+    public Product create(@Valid @RequestBody CreateProductRequest request) {
+        return productService.createProduct(request);
     }
 }

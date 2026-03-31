@@ -121,6 +121,7 @@ function OrderForm({ onOrderPlaced, currentUser }) {
           >
             {products.map((product) => (
               <option key={product.id} value={product.id}>
+                {product.productCode ? `[${product.productCode}] ` : ""}
                 {product.description} — £{Number(product.price).toFixed(2)} (
                 {product.availabilityCount} in stock)
               </option>

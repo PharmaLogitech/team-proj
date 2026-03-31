@@ -1,95 +1,109 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: A React component that displays the product catalogue.               ║
+ * ║  WHAT: Product catalogue — list, CAT-US1 initialize, CAT-US2 admin create.   ║
  * ║                                                                              ║
- * ║  WHY:  This is the main "read" view.  It fetches all products from the      ║
- * ║        Spring Boot backend on load and renders them as a table.             ║
- * ║        It demonstrates the core React data-fetching pattern:                ║
- * ║          1. Component mounts → useEffect fires → fetch data from API.       ║
- * ║          2. Data arrives → setState → component re-renders with data.       ║
- * ║                                                                              ║
- * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add a search/filter input above the table.                         ║
- * ║        - Add a "Add Product" form for admins.                               ║
- * ║        - Add pagination for large catalogues.                               ║
+ * ║  WHY:  Read-only table for all roles; ADMIN gets initialize + add product.   ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
-import { useState, useEffect } from "react";
-import { getProducts } from "./api.js";
+import { useState, useEffect, useCallback } from "react";
+import {
+  getProducts,
+  createProduct,
+  getCatalogueStatus,
+  initializeCatalogue,
+} from "./api.js";
+import { useAuth } from "./auth/AuthContext.jsx";
 
-/*
- * ── FUNCTIONAL COMPONENT ─────────────────────────────────────────────────────
- *
- * Catalogue is a function that returns JSX.  It takes no props (input
- * parameters) because it fetches its own data.  In more complex apps,
- * you might pass a "category" or "searchQuery" prop from a parent.
- *
- * ── PROPS ────────────────────────────────────────────────────────────────────
- *
- * Props (short for "properties") are how parent components pass data DOWN
- * to child components.  They flow ONE DIRECTION: parent → child.
- * A child can never modify its own props.
- *
- * Example:  <Catalogue category="painkillers" />
- *           Inside Catalogue: function Catalogue({ category }) { … }
- *
- * For Phase 1, this component has no props.  See OrderForm for a prop example.
- */
 function Catalogue() {
-  /*
-   * ── useState: Managing Local Component State ─────────────────────────────
-   *
-   * products:  The array of product objects fetched from the backend.
-   *            Starts as an empty array [].  Once the API responds,
-   *            we call setProducts(data) which triggers a re-render
-   *            and the table fills with rows.
-   *
-   * loading:   A boolean flag.  While the fetch is in progress, we show
-   *            a "Loading…" message instead of an empty table.
-   *
-   * error:     If the fetch fails, we store the error message here and
-   *            display it to the user.
-   */
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
+
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  /*
-   * ── useEffect: Fetching Data on Component Mount ─────────────────────────
-   *
-   * useEffect(callback, dependencyArray) runs SIDE EFFECTS — operations
-   * that reach outside the component (API calls, timers, DOM manipulation).
-   *
-   * How it works:
-   *   1. React renders the component for the first time.
-   *   2. AFTER the render is painted to the screen, React runs the callback.
-   *   3. The dependency array [] controls WHEN the effect re-runs:
-   *        []            → Run ONCE after the first render only (mount).
-   *        [someVar]     → Run on mount AND whenever someVar changes.
-   *        (no array)    → Run after EVERY render (rarely what you want).
-   *
-   * We pass [] because we only want to fetch products once, when the
-   * component first appears.  If we later needed real-time updates,
-   * we could add a polling interval or WebSocket.
-   *
-   * IMPORTANT: useEffect callbacks cannot be async directly.
-   * So we define an async function INSIDE and call it immediately.
-   */
+  const [catalogueInitialized, setCatalogueInitialized] = useState(null);
+  const [initBusy, setInitBusy] = useState(false);
+  const [initMessage, setInitMessage] = useState(null);
+
+  const [form, setForm] = useState({
+    productCode: "",
+    description: "",
+    price: "",
+    availabilityCount: "0",
+  });
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createMessage, setCreateMessage] = useState(null);
+
+  const loadProducts = useCallback(async () => {
+    const data = await getProducts();
+    setProducts(data);
+  }, []);
+
   useEffect(() => {
-    async function fetchProducts() {
+    async function load() {
       try {
         setLoading(true);
-        const data = await getProducts();
-        setProducts(data);
+        setError(null);
+        await loadProducts();
+        if (isAdmin) {
+          const status = await getCatalogueStatus();
+          setCatalogueInitialized(!!status.initialized);
+        }
       } catch (err) {
         setError(err.message);
       } finally {
         setLoading(false);
       }
     }
+    load();
+  }, [isAdmin, loadProducts]);
 
-    fetchProducts();
-  }, []);
+  const handleInitialize = async () => {
+    setInitBusy(true);
+    setInitMessage(null);
+    try {
+      await initializeCatalogue();
+      setCatalogueInitialized(true);
+      setInitMessage("Catalogue initialized.");
+    } catch (err) {
+      setInitMessage(err.message);
+    } finally {
+      setInitBusy(false);
+    }
+  };
+
+  const handleCreateProduct = async (e) => {
+    e.preventDefault();
+    setCreateBusy(true);
+    setCreateMessage(null);
+    try {
+      const priceNum = Number(form.price);
+      const availNum = parseInt(form.availabilityCount, 10);
+      await createProduct({
+        productCode: form.productCode.trim(),
+        description: form.description.trim(),
+        price: priceNum,
+        availabilityCount: availNum,
+      });
+      setForm({
+        productCode: "",
+        description: "",
+        price: "",
+        availabilityCount: "0",
+      });
+      setCreateMessage("Product created.");
+      await loadProducts();
+      if (isAdmin) {
+        const status = await getCatalogueStatus();
+        setCatalogueInitialized(!!status.initialized);
+      }
+    } catch (err) {
+      setCreateMessage(err.message);
+    } finally {
+      setCreateBusy(false);
+    }
+  };
 
   if (loading) return <p className="status-message">Loading catalogue...</p>;
   if (error) return <p className="status-message error">Error: {error}</p>;
@@ -98,37 +112,140 @@ function Catalogue() {
     <div className="catalogue">
       <h2>Product Catalogue</h2>
 
+      {isAdmin && (
+        <div
+          className="catalogue-admin"
+          style={{
+            marginBottom: "1.5rem",
+            padding: "1rem",
+            background: "#f8fafc",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <h3 style={{ marginTop: 0, fontSize: "1.1rem" }}>Catalogue administration</h3>
+          <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: "0.75rem" }}>
+            Initialize the catalogue once per system, then add products (unique Product ID, price
+            &gt; 0, availability ≥ 0).
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
+            <button
+              type="button"
+              className="submit-btn"
+              disabled={initBusy || catalogueInitialized === true}
+              onClick={handleInitialize}
+            >
+              {initBusy ? "Initializing..." : "Initialize catalogue"}
+            </button>
+            {catalogueInitialized === false && (
+              <span className="status-message" style={{ margin: 0 }}>
+                Catalogue not yet registered.
+              </span>
+            )}
+            {catalogueInitialized === true && (
+              <span className="status-message success" style={{ margin: 0 }}>
+                Catalogue registered.
+              </span>
+            )}
+          </div>
+          {initMessage && (
+            <p
+              className={`status-message ${initMessage.includes("already") || initMessage.includes("Conflict") ? "error" : ""}`}
+              style={{ marginTop: "0.75rem", marginBottom: 0 }}
+            >
+              {initMessage}
+            </p>
+          )}
+
+          <form onSubmit={handleCreateProduct} style={{ marginTop: "1.25rem" }}>
+            <h4 style={{ marginBottom: "0.75rem" }}>Add product</h4>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                gap: "0.75rem",
+                alignItems: "end",
+              }}
+            >
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="productCode">Product ID</label>
+                <input
+                  id="productCode"
+                  value={form.productCode}
+                  onChange={(e) => setForm((f) => ({ ...f, productCode: e.target.value }))}
+                  required
+                  autoComplete="off"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="description">Description</label>
+                <input
+                  id="description"
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="price">Unit price</label>
+                <input
+                  id="price"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={form.price}
+                  onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="availabilityCount">Availability</label>
+                <input
+                  id="availabilityCount"
+                  type="number"
+                  min="0"
+                  value={form.availabilityCount}
+                  onChange={(e) => setForm((f) => ({ ...f, availabilityCount: e.target.value }))}
+                  required
+                />
+              </div>
+              <button type="submit" className="submit-btn" disabled={createBusy}>
+                {createBusy ? "Saving..." : "Add product"}
+              </button>
+            </div>
+            {createMessage && (
+              <p
+                className={`status-message ${createMessage.includes("created") ? "success" : "error"}`}
+                style={{ marginTop: "0.75rem", marginBottom: 0 }}
+              >
+                {createMessage}
+              </p>
+            )}
+          </form>
+        </div>
+      )}
+
       {products.length === 0 ? (
         <p className="status-message">
-          No products yet. Add some via the API or database!
+          No products yet.
+          {isAdmin ? " Use the form above to add products." : " An administrator must add products first."}
         </p>
       ) : (
         <table className="data-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>Product ID</th>
               <th>Description</th>
               <th>Price</th>
               <th>In Stock</th>
             </tr>
           </thead>
           <tbody>
-            {/*
-             * ── RENDERING LISTS ──────────────────────────────────────────────
-             *
-             * .map() transforms each element of an array into JSX.
-             * React requires a unique "key" prop on each element so it
-             * can efficiently update the DOM when items change.
-             *
-             * Using the database id as the key is ideal because it's
-             * guaranteed unique and stable.  Avoid using array index
-             * as key — it causes bugs when items are reordered or deleted.
-             */}
             {products.map((product) => (
               <tr key={product.id}>
-                <td>{product.id}</td>
+                <td>{product.productCode ?? "—"}</td>
                 <td>{product.description}</td>
-                <td>${Number(product.price).toFixed(2)}</td>
+                <td>£{Number(product.price).toFixed(2)}</td>
                 <td>{product.availabilityCount}</td>
               </tr>
             ))}

@@ -31,7 +31,7 @@ React (Frontend)  →  Spring Boot (Backend API)  →  MySQL (Database)
 | Layer    | Technology           | Version / notes      |
 |----------|----------------------|----------------------|
 | Frontend | React (Vite, JS)     | Node 20+ required    |
-| Backend  | Spring Boot          | 3.4.x, **Java 17** (`pom.xml`) |
+| Backend  | Spring Boot          | 3.4.x, **Java 17** or Java 23 (`pom.xml`) |
 | Database | MySQL                | 8.x+                 |
 | Build    | Maven                | 3.9+ (`mvn` on PATH) |
 
@@ -43,7 +43,7 @@ Install the following **before** running the app:
 
 | Tool      | Purpose                          | Where to get it |
 |-----------|-----------------------------------|-----------------|
-| **Java 17**       | Backend compiles and runs on JVM (`java.version` in `backend/pom.xml`) | [Eclipse Temurin 17](https://adoptium.net/) |
+| **Java 17 or 23**       | Backend compiles and runs on JVM (`java.version` in `backend/pom.xml`) | [Eclipse Temurin 17](https://adoptium.net/) |
 | **Node.js 20+**   | Frontend build and dev server     | [nodejs.org](https://nodejs.org/) (LTS) or `winget install OpenJS.NodeJS.LTS` |
 | **MySQL 8+**      | Database for users, products, orders | [MySQL](https://dev.mysql.com/downloads/) or a packaged install (e.g. XAMPP) |
 | **Maven 3.9+**    | Build and run backend             | [Maven](https://maven.apache.org/download.cgi) — run commands from `backend/` |
