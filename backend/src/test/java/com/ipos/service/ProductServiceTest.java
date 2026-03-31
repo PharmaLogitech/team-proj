@@ -8,13 +8,13 @@
  * ║  WHY:  ProductService now has 6 public methods, qualifying it as a         ║
  * ║        "non-trivial class with more than 5 methods" per the brief.         ║
  * ║                                                                              ║
- * ║  COVERAGE (maps directly to High-Level Design test cases):                 ║
- * ║    Tests 12-13:  getCatalogue / findAll (catalogue browsing)               ║
- * ║    Tests 17-18:  increaseStock — success paths                             ║
- * ║    Tests 19-22:  increaseStock — failure paths                             ║
- * ║    Tests 23:     decreaseStock — success path                              ║
- * ║    Tests 24-27:  decreaseStock — failure paths                             ║
- * ║    Additional:   findById, save, delete                                    ║
+ * ║  COVERAGE (core behaviours under test):                                    ║
+ * ║    • getCatalogue / findAll (catalogue browsing)                           ║
+ * ║    • increaseStock — success and failure paths                             ║
+ * ║    • decreaseStock — success and failure paths                             ║
+ * ║    • basic CRUD helpers: findById, save, delete                            ║
+ * ║                                                                            ║
+ * ║  NOTE: Individual @Test methods may be added/renamed over time; this       ║
  * ║                                                                              ║
  * ║  HOW:  Pure Mockito unit tests — no Spring context, no database.           ║
  * ║        ProductRepository is mocked so tests run in milliseconds.           ║
