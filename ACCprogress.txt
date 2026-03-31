@@ -824,9 +824,11 @@ but are NOT required by any acceptance criterion:
 ── 7.7  Deeper Test Coverage ──────────────────────────────────────────────────
 
   See the "Future tests needed" list in section 6 above.  The 57 existing
-  tests (across 5 test classes + 1 suite) cover the service and entity layers
-  for ACC, ORD, and CAT packages; controller-layer, repository, and frontend
-  tests would provide fuller coverage.
+  brief-required tests (across 5 JUnit test classes + 1 JUnit suite, scoped
+  to the ACC, ORD, and CAT packages) cover the service and entity layers for
+  those packages.  Additional `*Test` classes that are executed by `mvn test`
+  are outside this counted subset.  Controller-layer, repository, and
+  frontend tests would provide fuller coverage.
 
 
 ================================================================================
