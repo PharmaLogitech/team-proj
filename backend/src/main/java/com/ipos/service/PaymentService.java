@@ -13,7 +13,7 @@
  * ║        - merchantId must be a valid positive integer (T3: negative → fail). ║
  * ║        - merchantId must refer to an existing merchant (T4: unknown → fail).║
  * ║        - amount must be > 0 (T5: negative → fail; T6: zero → fail).        ║
- * ║        - amount must have decimal precision (T2: 120.75 → accepted).        ║
+ * ║        - amount may include decimal precision (T2: 120.75 → accepted).      ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.service;
