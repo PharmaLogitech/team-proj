@@ -247,7 +247,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 |----------------|--------------------|--------|
 | **IPOS-SA-ACC** | Implemented (prototype) | Merchant onboarding (`POST /api/merchant-accounts`, validated DTO), staff users (`/api/users`), RBAC. See **`ACCprogress.txt`**. |
 | **IPOS-SA-MER** | Implemented (prototype) | Merchant **profiles**: `GET`/`PUT /api/merchant-profiles`, flexible **month-close** (`POST .../close-month`), contact edits, standing rules (`IN_DEFAULT` → `NORMAL`/`SUSPENDED` with 30-day rule for managers), **`StandingChangeLog`** audit. Manager + Admin only (not merchants). Documented in **`ACCprogress.txt`** / **`RBAC.md`**. |
-| **IPOS-SA-CAT** | Partial | `Product` entity, `GET`/`POST /api/products` (no `PUT`/`DELETE` on controller yet — security rules exist for when added). Catalogue + order UIs; **no** admin catalogue UI, search, deliveries, min-stock, or merchant stock masking. See **`CATprogress.txt`**. |
+| **IPOS-SA-CAT** | Partial | `Product` entity, `GET`/`POST`/`PUT`/`DELETE /api/products` (ADMIN). Admin catalogue UI with create, edit modal, and delete Yes/No confirmation. `ProductDeletionLog` audit entity. **No** search, deliveries, min-stock, or merchant stock masking yet. See **`CATprogress.txt`**. |
 | **IPOS-SA-ORD** | Partial | `POST /api/orders`: stock decrement, price snapshot, discounts, credit limit, **ORD-US1** (merchants forced to own `merchantId`). `GET /api/orders` returns **all** orders for any authenticated user (merchant-scoped list not implemented). Invoices/payments/status workflow still to do. |
 | **IPOS-SA-RPRT** | Stub | `ReportingPlaceholder.jsx`; `/api/reports/**` secured for manager/admin — **no** report controllers yet. |
 
@@ -275,7 +275,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 | Merchant profiles | `GET`/`PUT /api/merchant-profiles`, `GET /api/merchant-profiles/{userId}`, `POST /api/merchant-profiles/close-month` | MANAGER, ADMIN |
 | Staff users | `/api/users/**` | ADMIN |
 | Products | `GET /api/products` | Authenticated |
-| Products | `POST`/`PUT`/`DELETE /api/products/**` | ADMIN (PUT/DELETE not wired in `ProductController` yet) |
+| Products | `POST`/`PUT`/`DELETE /api/products/**` | ADMIN |
 | Orders | `/api/orders/**` | Authenticated |
 | Reports | `/api/reports/**` | MANAGER, ADMIN (no handlers yet) |
 
@@ -285,7 +285,7 @@ Full detail: **`RBAC.md`** and `backend/.../SecurityConfig.java`.
 
 ## Backend Tests
 
-JUnit 5 **unit** tests live under `backend/src/test/java/` (currently **`com.ipos.service.MerchantAccountServiceTest`** — 20 tests: merchant creation, tier validation, fixed/flexible order math, credit limit, ORD-US1 isolation, `AccountStatus`, `inDefaultSince`, `StandingChangeLog` entity checks, suspended/in-default blocking). **No** `ProductController` / `WebMvc` integration tests yet.
+JUnit 5 **unit** tests live under `backend/src/test/java/` — **`com.ipos.service.MerchantAccountServiceTest`** (20 tests: merchant creation, tier validation, fixed/flexible order math, credit limit, ORD-US1 isolation, `AccountStatus`, `inDefaultSince`, `StandingChangeLog` entity checks, suspended/in-default blocking) and **`com.ipos.cat.CatalogueCatTest`** (15 Mockito unit tests for CAT-US1–US4 + 5 WebMvc integration tests for POST/PUT/DELETE validation and happy paths).
 
 Test profile (H2 in-memory, bootstrap off):
 

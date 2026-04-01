@@ -92,8 +92,8 @@ Frontend
 
   US1  Catalogue Initialization          PARTIAL (implicit schema only)
   US2  Product Creation                  PARTIAL (API only; weak validation)
-  US3  Product Discontinuation/Removal   NOT STARTED
-  US4  Product Data Maintenance          NOT STARTED
+  US3  Product Discontinuation/Removal   DONE
+  US4  Product Data Maintenance          DONE
   US5  Internal Product Search           NOT STARTED
   US6  Merchant Catalogue Browsing       PARTIAL (read-only OK; stock masking NO)
   US7  Stock Delivery Recording          NOT STARTED
@@ -250,41 +250,28 @@ ACCEPTANCE CRITERION 1:
   "The system must prompt for a confirmation Yes/No before a product is
    deleted."
 
-  STATUS: ❌  NOT STARTED (no delete flow at all)
+  STATUS: ✅  DONE
 
-  TODAY:
-    • ProductController has no @DeleteMapping.
-    • No admin UI for delete.
-
-  WORK TO COMPLETE:
-    • Frontend: delete button opens modal/dialog "Are you sure? Yes / No";
-      only on Yes call DELETE API.
-    • Alternatively document that browser confirm() meets "prompt" for
-      prototype (weaker UX).
+  IMPLEMENTED:
+    • DELETE /api/products/{id} endpoint on ProductController (ADMIN only).
+    • Frontend: Catalogue.jsx shows a modal with "Yes" / "No" buttons
+      before calling DELETE. Only on "Yes" does the API call fire.
 
 
 ACCEPTANCE CRITERION 2:
   "The system must log the deletion activity, including which user performed
    the action."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  TODAY:
-    • No ProductDeletionLog entity or generic audit table for catalogue.
-
-  WORK TO COMPLETE:
-    • New entity (e.g. product_deletion_logs): productId/code snapshot,
-      description snapshot, deletedBy (User FK), deletedAt.
-    • On successful delete, insert log row in same transaction.
-    • Mirror pattern used for ACC StandingChangeLog if desired.
-
-
-DESIGN NOTE (brief alignment):
-  Hard DELETE breaks historical order line references unless orders store
-  product snapshot (you already have unitPriceAtOrder on order items — check
-  if product FK allows null or if soft-delete is better).  Consider:
-    • Soft delete: discontinued flag + hide from merchant catalogue; OR
-    • Hard delete only when no order history (enforce in service).
+  IMPLEMENTED:
+    • New entity ProductDeletionLog (table product_deletion_logs): snapshots
+      productId, productCode, description, deletedBy (User FK), deletedAt.
+    • ProductService.deleteProduct() saves the log and deletes the product
+      in a single @Transactional method.
+    • Hard delete only when no order_items reference the product; otherwise
+      returns 409 CONFLICT (preserves historical order integrity).
+    • Mirrors the StandingChangeLog pattern from ACC-US5.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -298,28 +285,27 @@ Title:
 ACCEPTANCE CRITERION 1:
   "The system must prevent the modification of an existing Product ID."
 
-  STATUS: ❌  NOT STARTED (no update endpoint)
+  STATUS: ✅  DONE
 
-  TODAY:
-    • No PUT /api/products/{id}.
-
-  WORK TO COMPLETE:
-    • PUT endpoint with UpdateProductRequest that omits id OR ignores id in
-      body; only allow changing description, price, availability (and later
-      min threshold).  Path variable id is the sole identifier.
+  IMPLEMENTED:
+    • PUT /api/products/{id} endpoint on ProductController (ADMIN only).
+    • UpdateProductRequest DTO has NO productCode field — the Product ID
+      is immutable. Only description, price, and availabilityCount can be
+      changed. Path variable id (surrogate PK) is the sole identifier.
 
 
 ACCEPTANCE CRITERION 2:
   "The system must validate that any updated price or stock level
    (Availability) remains non-negative."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • @DecimalMin on price (> 0 if business rule matches US2).
-    • @Min(0) on availability updates.
-    • api.js: add updateProduct(id, payload).
-    • Admin UI: edit row or edit form on catalogue management page.
+  IMPLEMENTED:
+    • UpdateProductRequest DTO: @NotNull @DecimalMin("0.01") on price
+      (greater than zero, matching US2); @NotNull @Min(0) on availabilityCount.
+    • api.js: updateProduct(id, payload) → PUT /api/products/{id}.
+    • Admin UI: Catalogue.jsx edit modal prefilled from row; submit calls
+      updateProduct; validation errors surfaced to user.
 
 
 ──────────────────────────────────────────────────────────────────────────────
