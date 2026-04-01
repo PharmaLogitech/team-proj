@@ -41,28 +41,35 @@ screens — see per-story sections below.
 
 Backend
   entity/Product.java
-    Fields: id (Long, generated), description (String), price (BigDecimal),
-            availabilityCount (Integer → column availability_count).
-    No: separate business "Product ID" / SKU, no minStockThreshold, no
-        soft-delete / discontinued flag, no Bean Validation on entity.
+    Fields: id (Long, generated), productCode (business Product ID / SKU),
+            description, price (BigDecimal), availabilityCount.
+    No: minStockThreshold, soft-delete / discontinued flag; validation is on
+        DTOs (CreateProductRequest / UpdateProductRequest), not on the entity.
 
   repository/ProductRepository.java
-    Extends JpaRepository<Product, Long> only — no custom query methods
-    (e.g. search by description, price range).
+    JpaRepository<Product, Long> plus existsByProductCode(String) for CAT-US2.
+    search(productCode, q, minPrice, maxPrice) — JPQL combined AND-filter
+    with case-insensitive substring matching (CAT-US5/US6).
 
   service/ProductService.java
-    findAll(), findById(Long), save(Product) — thin pass-through to repo.
+    findAll(), findAllForCatalogue(maskStock) → CatalogueProductDto (CAT-US6),
+    searchProducts(productCode, q, minPrice, maxPrice, maskStock) (CAT-US5),
+    findById(Long), createProduct(CreateProductRequest),
+    updateProduct(Long, UpdateProductRequest) (CAT-US4),
+    deleteProduct(Long, User) with ProductDeletionLog + 409 if order items
+    reference the product (CAT-US3).
 
   controller/ProductController.java
-    GET  /api/products  → list all
-    POST /api/products  → create (raw Product body, no DTO validation)
-    NOTE: No PUT, no DELETE, no /search routes (comments acknowledge future
-          CAT-US3/US4/US5 work).
+    GET  /api/products  → role-aware catalogue list (CatalogueProductDto)
+    GET  /api/products/search  → combined search (CAT-US5/US6)
+    POST /api/products  → create (@Valid CreateProductRequest) — CAT-US2
+    PUT  /api/products/{id}  → update (@Valid UpdateProductRequest) — CAT-US4
+    DELETE /api/products/{id}  → remove with audit actor — CAT-US3
 
   security/SecurityConfig.java
     GET  /api/products/**  → authenticated (all roles)
-    POST/PUT/DELETE        → ADMIN only (PUT/DELETE allowed by security but
-                             not implemented on ProductController)
+    POST/PUT/DELETE /api/products/**  → ADMIN only (matches implemented
+                                        controller methods)
 
   service/OrderService.java
     On order placement: validates sufficient availabilityCount, then decrements
@@ -70,13 +77,16 @@ Backend
 
 Frontend
   src/Catalogue.jsx
-    Fetches GET /api/products, displays table: ID, Description, Price,
-    In Stock (raw availabilityCount).  Same view for all roles — no role-
-    specific masking for merchants.
+    Fetches GET /api/products (role-aware DTO); search via GET /api/products/search.
+    ADMIN: catalogue init + create product, edit modal (CAT-US4), delete
+    confirmation Yes/No (CAT-US3), full search form, numeric stock column.
+    MERCHANT: search by description; "Availability" column shows Available /
+    Out of Stock (CAT-US6 masking). "No products found" on empty search.
 
   src/api.js
-    getProducts(), createProduct() — no updateProduct, deleteProduct,
-    searchProducts, recordDelivery, etc.
+    getProducts(), searchProducts({productCode, q, minPrice, maxPrice}),
+    createProduct(), updateProduct(id, body), deleteProduct(id).
+    Still no recordDelivery, etc.
 
   src/OrderForm.jsx (IPOS-SA-ORD, but affects CAT-US6)
     Product dropdown shows: description, price, and "X in stock" using
@@ -94,8 +104,8 @@ Frontend
   US2  Product Creation                  PARTIAL (API only; weak validation)
   US3  Product Discontinuation/Removal   DONE
   US4  Product Data Maintenance          DONE
-  US5  Internal Product Search           NOT STARTED
-  US6  Merchant Catalogue Browsing       PARTIAL (read-only OK; stock masking NO)
+  US5  Internal Product Search           DONE
+  US6  Merchant Catalogue Browsing       DONE
   US7  Stock Delivery Recording          NOT STARTED
   US8  Minimum Stock Thresholds          NOT STARTED
   US9  Automated Low-Stock Warnings      NOT STARTED
@@ -320,29 +330,24 @@ Title:
 ACCEPTANCE CRITERION 1:
   "The system must allow searching by Product ID, Description, or Price Range."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  TODAY:
-    • Only GET /api/products returns full list — client-side filter possible
-      but not implemented; no server-side search.
-
-  WORK TO COMPLETE:
-    • Backend: GET /api/products/search?productId=&q=&minPrice=&maxPrice=
-      (combine criteria with AND logic; document semantics).
-    • Repository: findById (already), findByDescriptionContainingIgnoreCase,
-      findByPriceBetween, or @Query for combined filter.
-    • Admin UI: search form + results table (reuse same row layout as full
-      catalogue).
+  IMPLEMENTATION:
+    • GET /api/products/search?productCode=&q=&minPrice=&maxPrice=
+      All params optional, AND-combined. JPQL @Query in ProductRepository.
+    • Catalogue.jsx search form: Product ID, Description, Min/Max price
+      inputs with Search / Clear buttons (admin/manager see all fields;
+      merchant sees description only).
 
 
 ACCEPTANCE CRITERION 2:
   "The system must display a 'No products found' message if no matches exist."
 
-  STATUS: ❌  NOT STARTED (depends on US5 UI)
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • Frontend: if API returns empty array, show explicit message.
-    • Backend can return 200 + [] (preferred) vs 404 — stay consistent.
+  IMPLEMENTATION:
+    • Backend returns 200 + [].
+    • Catalogue.jsx shows "No products found." when search returns empty.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -357,50 +362,38 @@ ACCEPTANCE CRITERION 1:
   "The system must provide Read-Only access, the merchant cannot edit any
    catalogue details."
 
-  STATUS: ✅  MOSTLY MET (backend); ⚠️  UI is shared
+  STATUS: ✅  MET
 
-  TODAY:
+  IMPLEMENTATION:
     • Spring Security: MERCHANT cannot POST/PUT/DELETE /api/products.
-    • Catalogue.jsx has no edit/delete controls — display only.
-
-  MINOR GAP:
-    • Same Catalogue component is shown to Admin/Manager — they also see
-      read-only table here (admin mutations would be a separate page — OK).
+    • Catalogue.jsx hides admin controls (init, create, edit, delete)
+      when role is not ADMIN.
 
 
 ACCEPTANCE CRITERION 2:
   "The system must hide the products stock levels from the merchant view
    (only showing 'Available' or 'Out of Stock')."
 
-  STATUS: ❌  NOT MET
+  STATUS: ✅  DONE
 
-  TODAY:
-    • Catalogue.jsx column "In Stock" shows raw availabilityCount.
-    • OrderForm.jsx option text includes "(X in stock)" for every role,
-      including merchants.
-
-  WORK TO COMPLETE:
-    • Option A (frontend-only): if user.role === 'MERCHANT', map
-      availabilityCount > 0 → "Available", else "Out of Stock"; omit numeric
-      column.
-    • Option B (cleaner API): DTO MerchantProductResponse without stock count,
-      only availabilityStatus enum; keep full Product for admin endpoints.
-    • Apply same masking in OrderForm dropdown for MERCHANT.
+  IMPLEMENTATION:
+    • CatalogueProductDto with @JsonInclude(NON_NULL) on availabilityCount.
+      For MERCHANT: availabilityCount is null (omitted from JSON),
+      availabilityStatus is "AVAILABLE" or "OUT_OF_STOCK".
+    • Catalogue.jsx "Availability" column shows text labels for MERCHANT.
+    • OrderForm.jsx dropdown shows "Available" / "Out of Stock" for MERCHANT
+      instead of numeric "X in stock".
 
 
 ACCEPTANCE CRITERION 3:
   "The system must allow for products to be searched from incomplete words
    (para -> can search for paracetamol)"
 
-  STATUS: ❌  NOT MET
+  STATUS: ✅  DONE
 
-  TODAY:
-    • No search input on Catalogue.jsx.
-
-  WORK TO COMPLETE:
-    • Backend: description ILIKE %keyword% (or full-text if required).
-    • Frontend: search box debounced → call search API or filter — merchants
-      should use substring/partial match behaviour.
+  IMPLEMENTATION:
+    • JPQL: LOWER(p.description) LIKE LOWER(CONCAT('%', :q, '%')).
+    • Catalogue.jsx search bar with description field available to all roles.
 
 
 ──────────────────────────────────────────────────────────────────────────────

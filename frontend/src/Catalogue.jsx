@@ -1,10 +1,20 @@
 /*
- * Product catalogue — list, CAT-US1 initialize, CAT-US2 admin create,
- * CAT-US3 admin delete (Yes/No modal), CAT-US4 admin edit.
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║  WHAT: Product catalogue — list, search, CAT-US1 initialize,                ║
+ * ║        CAT-US2 admin create, CAT-US3 admin delete (Yes/No modal),           ║
+ * ║        CAT-US4 admin edit, CAT-US5 multi-criteria search,                   ║
+ * ║        CAT-US6 merchant stock masking.                                      ║
+ * ║                                                                              ║
+ * ║  WHY:  Single catalogue page for all roles. ADMIN sees admin tools (init,   ║
+ * ║        create, edit, delete) and full stock counts. MERCHANT sees read-only  ║
+ * ║        table with Available/Out of Stock labels instead of numeric counts.   ║
+ * ║        All roles can search by Product ID, description, and price range.     ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 import { useState, useEffect, useCallback } from "react";
 import {
   getProducts,
+  searchProducts,
   createProduct,
   updateProduct,
   deleteProduct,
@@ -13,9 +23,21 @@ import {
 } from "./api.js";
 import { useAuth } from "./auth/AuthContext.jsx";
 
+/**
+ * Formats the availability column based on role (CAT-US6).
+ * MERCHANT sees "Available" or "Out of Stock"; others see the numeric count.
+ */
+function formatAvailability(product, role) {
+  if (role === "MERCHANT") {
+    return product.availabilityStatus === "AVAILABLE" ? "Available" : "Out of Stock";
+  }
+  return product.availabilityCount ?? "\u2014";
+}
+
 function Catalogue() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const isMerchant = user?.role === "MERCHANT";
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +66,17 @@ function Catalogue() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState(null);
+
+  // CAT-US5/US6: Search state
+  const [searchForm, setSearchForm] = useState({
+    productCode: "",
+    q: "",
+    minPrice: "",
+    maxPrice: "",
+  });
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState(null);
 
   const loadProducts = useCallback(async () => {
     const data = await getProducts();
@@ -176,6 +209,39 @@ function Catalogue() {
     }
   };
 
+  // CAT-US5: Search handler
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    setSearchBusy(true);
+    setSearchError(null);
+    try {
+      const results = await searchProducts({
+        productCode: searchForm.productCode.trim() || undefined,
+        q: searchForm.q.trim() || undefined,
+        minPrice: searchForm.minPrice || undefined,
+        maxPrice: searchForm.maxPrice || undefined,
+      });
+      setProducts(results);
+      setSearchActive(true);
+    } catch (err) {
+      setSearchError(err.message);
+    } finally {
+      setSearchBusy(false);
+    }
+  };
+
+  // CAT-US5: Clear search and reload full catalogue
+  const handleClearSearch = async () => {
+    setSearchForm({ productCode: "", q: "", minPrice: "", maxPrice: "" });
+    setSearchActive(false);
+    setSearchError(null);
+    try {
+      await loadProducts();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   if (loading) return <p className="status-message">Loading catalogue...</p>;
   if (error) return <p className="status-message error">Error: {error}</p>;
 
@@ -183,6 +249,7 @@ function Catalogue() {
     <div className="catalogue">
       <h2>Product Catalogue</h2>
 
+      {/* ── Admin tools (init, create) ────────────────────────────────── */}
       {isAdmin && (
         <div
           className="catalogue-admin"
@@ -296,29 +363,124 @@ function Catalogue() {
         </div>
       )}
 
+      {/* ── CAT-US5/US6: Search bar (all roles) ──────────────────────── */}
+      <div
+        style={{
+          marginBottom: "1.5rem",
+          padding: "1rem",
+          background: "#f8fafc",
+          borderRadius: "8px",
+          border: "1px solid #e2e8f0",
+        }}
+      >
+        <h3 style={{ marginTop: 0, fontSize: "1.1rem" }}>Search products</h3>
+        <form onSubmit={handleSearch}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+              gap: "0.75rem",
+              alignItems: "end",
+            }}
+          >
+            {!isMerchant && (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="search-productCode">Product ID</label>
+                <input
+                  id="search-productCode"
+                  value={searchForm.productCode}
+                  onChange={(e) => setSearchForm((f) => ({ ...f, productCode: e.target.value }))}
+                  placeholder="e.g. PARA"
+                  autoComplete="off"
+                />
+              </div>
+            )}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="search-q">Description</label>
+              <input
+                id="search-q"
+                value={searchForm.q}
+                onChange={(e) => setSearchForm((f) => ({ ...f, q: e.target.value }))}
+                placeholder="e.g. paracetamol"
+              />
+            </div>
+            {!isMerchant && (
+              <>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label htmlFor="search-minPrice">Min price</label>
+                  <input
+                    id="search-minPrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={searchForm.minPrice}
+                    onChange={(e) => setSearchForm((f) => ({ ...f, minPrice: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label htmlFor="search-maxPrice">Max price</label>
+                  <input
+                    id="search-maxPrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={searchForm.maxPrice}
+                    onChange={(e) => setSearchForm((f) => ({ ...f, maxPrice: e.target.value }))}
+                    placeholder="100.00"
+                  />
+                </div>
+              </>
+            )}
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button type="submit" className="submit-btn" disabled={searchBusy}>
+                {searchBusy ? "Searching..." : "Search"}
+              </button>
+              {searchActive && (
+                <button
+                  type="button"
+                  className="submit-btn"
+                  style={{ background: "#64748b" }}
+                  onClick={handleClearSearch}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+          {searchError && (
+            <p className="status-message error" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+              {searchError}
+            </p>
+          )}
+        </form>
+      </div>
+
+      {/* ── Product table ─────────────────────────────────────────────── */}
       {products.length === 0 ? (
         <p className="status-message">
-          No products yet.
-          {isAdmin ? " Use the form above to add products." : " An administrator must add products first."}
+          {searchActive
+            ? "No products found."
+            : `No products yet.${isAdmin ? " Use the form above to add products." : " An administrator must add products first."}`}
         </p>
       ) : (
         <table className="data-table">
           <thead>
             <tr>
-              <th>Product ID</th>
+              {!isMerchant && <th>Product ID</th>}
               <th>Description</th>
               <th>Price</th>
-              <th>In Stock</th>
+              <th>{isMerchant ? "Availability" : "In Stock"}</th>
               {isAdmin && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {products.map((product) => (
               <tr key={product.id}>
-                <td>{product.productCode ?? "\u2014"}</td>
+                {!isMerchant && <td>{product.productCode ?? "\u2014"}</td>}
                 <td>{product.description}</td>
                 <td>&pound;{Number(product.price).toFixed(2)}</td>
-                <td>{product.availabilityCount}</td>
+                <td>{formatAvailability(product, user?.role)}</td>
                 {isAdmin && (
                   <td>
                     <button

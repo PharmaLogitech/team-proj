@@ -54,15 +54,42 @@ function errorMessageFromBody(body, response) {
 
 /**
  * Fetch ALL products from the backend catalogue.
- * GET /api/products → returns JSON array of product objects.
+ * GET /api/products → returns JSON array of CatalogueProductDto objects.
+ * Response shape varies by role (CAT-US6):
+ *   ADMIN/MANAGER: { id, productCode, description, price, availabilityCount, availabilityStatus }
+ *   MERCHANT:      { id, productCode, description, price, availabilityStatus }
+ *                  (availabilityCount is omitted from JSON)
  *
  * ACCESS: All authenticated users (MERCHANT, MANAGER, ADMIN).
- * Merchants see this as read-only catalogue browsing (CAT-US6).
  */
 export async function getProducts() {
   const response = await fetchWithAuth(`${API_BASE}/products`);
   if (!response.ok) {
     throw new Error("Failed to fetch products");
+  }
+  return response.json();
+}
+
+/**
+ * Search products with optional combined filters (CAT-US5/US6).
+ * GET /api/products/search?productCode=&q=&minPrice=&maxPrice=
+ * All params are optional; omitted params apply no filter. AND logic.
+ * Returns same CatalogueProductDto shape as getProducts().
+ *
+ * ACCESS: All authenticated users (search available to all roles).
+ */
+export async function searchProducts({ productCode, q, minPrice, maxPrice } = {}) {
+  const params = new URLSearchParams();
+  if (productCode) params.set("productCode", productCode);
+  if (q) params.set("q", q);
+  if (minPrice != null && minPrice !== "") params.set("minPrice", String(minPrice));
+  if (maxPrice != null && maxPrice !== "") params.set("maxPrice", String(maxPrice));
+  const qs = params.toString();
+  const url = qs ? `${API_BASE}/products/search?${qs}` : `${API_BASE}/products/search`;
+  const response = await fetchWithAuth(url);
+  if (!response.ok) {
+    const body = await parseResponseBody(response);
+    throw new Error(errorMessageFromBody(body, response));
   }
   return response.json();
 }

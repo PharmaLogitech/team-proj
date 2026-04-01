@@ -1,6 +1,6 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Central CAT test source for IPOS-SA-CAT US1–US4.                    ║
+ * ║  WHAT: Central CAT test source for IPOS-SA-CAT US1–US6.                    ║
  * ║                                                                              ║
  * ║  WHY:  Keep catalogue behavior in one file for easier marking/review while   ║
  * ║        following the working style used by MerchantAccountServiceTest:       ║
@@ -14,14 +14,19 @@
  * ║       - CAT-US2 product create rules                                         ║
  * ║       - CAT-US3 product delete (audit log, 409 guard, 404)                   ║
  * ║       - CAT-US4 product update (immutable productCode, 404)                  ║
+ * ║       - CAT-US5 searchProducts (AND logic, price validation)                 ║
+ * ║       - CAT-US6 findAllForCatalogue (stock masking for merchants)            ║
  * ║    2) ProductControllerCatalogueCatWebMvcTest (WebMvc slice):               ║
- * ║       - DTO validation and successful POST/PUT/DELETE responses              ║
+ * ║       - DTO validation and successful POST/PUT/DELETE/GET responses          ║
+ * ║       - CAT-US5 GET /api/products/search WebMvc                             ║
+ * ║       - CAT-US6 merchant stock masking via GET /api/products                ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.cat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ipos.controller.ProductController;
+import com.ipos.dto.CatalogueProductDto;
 import com.ipos.dto.CreateProductRequest;
 import com.ipos.dto.UpdateProductRequest;
 import com.ipos.entity.CatalogueMetadata;
@@ -51,21 +56,26 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @DisplayName("IPOS-SA-CAT — Catalogue & product (CatalogueCatTest)")
@@ -332,13 +342,103 @@ public class CatalogueCatTest {
 
         assertEquals("padded", result.getDescription());
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  CAT-US5: ProductService#searchProducts rules
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("CAT-US5: searchProducts returns 400 when minPrice > maxPrice")
+    void searchProducts_invalidPriceRange_400() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> productService.searchProducts(null, null,
+                        new BigDecimal("50.00"), new BigDecimal("10.00"), false));
+        assertEquals(400, ex.getStatusCode().value());
+    }
+
+    @Test
+    @DisplayName("CAT-US5: searchProducts delegates to repository and maps to DTOs")
+    void searchProducts_delegatesToRepo() {
+        Product p = sampleProduct(1L, "PARA", "Paracetamol", "3.50", 100);
+        when(productRepository.search(eq("PARA"), isNull(), isNull(), isNull()))
+                .thenReturn(List.of(p));
+
+        List<CatalogueProductDto> results = productService.searchProducts(
+                "PARA", null, null, null, false);
+
+        assertEquals(1, results.size());
+        assertEquals("PARA", results.get(0).getProductCode());
+        assertEquals(100, results.get(0).getAvailabilityCount());
+    }
+
+    @Test
+    @DisplayName("CAT-US5: searchProducts with all null filters returns all products mapped")
+    void searchProducts_allNull_returnsAll() {
+        when(productRepository.search(isNull(), isNull(), isNull(), isNull()))
+                .thenReturn(List.of(
+                        sampleProduct(1L, "A", "Alpha", "1.00", 5),
+                        sampleProduct(2L, "B", "Beta", "2.00", 0)));
+
+        List<CatalogueProductDto> results = productService.searchProducts(
+                null, null, null, null, false);
+
+        assertEquals(2, results.size());
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  CAT-US6: ProductService stock masking (merchant vs admin)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("CAT-US6: findAllForCatalogue maskStock=true hides count, shows status")
+    void findAllForCatalogue_merchantMasked() {
+        when(productRepository.findAll()).thenReturn(List.of(
+                sampleProduct(1L, "X", "In-stock item", "5.00", 10),
+                sampleProduct(2L, "Y", "Out-of-stock item", "3.00", 0)));
+
+        List<CatalogueProductDto> dtos = productService.findAllForCatalogue(true);
+
+        assertEquals(2, dtos.size());
+        assertNull(dtos.get(0).getAvailabilityCount());
+        assertEquals("AVAILABLE", dtos.get(0).getAvailabilityStatus());
+        assertNull(dtos.get(1).getAvailabilityCount());
+        assertEquals("OUT_OF_STOCK", dtos.get(1).getAvailabilityStatus());
+    }
+
+    @Test
+    @DisplayName("CAT-US6: findAllForCatalogue maskStock=false includes count")
+    void findAllForCatalogue_adminFull() {
+        when(productRepository.findAll()).thenReturn(List.of(
+                sampleProduct(1L, "X", "Item", "5.00", 10)));
+
+        List<CatalogueProductDto> dtos = productService.findAllForCatalogue(false);
+
+        assertEquals(1, dtos.size());
+        assertEquals(10, dtos.get(0).getAvailabilityCount());
+        assertEquals("AVAILABLE", dtos.get(0).getAvailabilityStatus());
+    }
+
+    @Test
+    @DisplayName("CAT-US6: searchProducts with maskStock=true hides count from merchant")
+    void searchProducts_merchantMasked() {
+        Product p = sampleProduct(1L, "PARA", "Paracetamol", "3.50", 100);
+        when(productRepository.search(isNull(), eq("para"), isNull(), isNull()))
+                .thenReturn(List.of(p));
+
+        List<CatalogueProductDto> results = productService.searchProducts(
+                null, "para", null, null, true);
+
+        assertEquals(1, results.size());
+        assertNull(results.get(0).getAvailabilityCount());
+        assertEquals("AVAILABLE", results.get(0).getAvailabilityStatus());
+    }
 }
 
 /*
  * WebMvc slice — same source file as CatalogueCatTest; Surefire discovers *Test classes.
  */
 @WebMvcTest(controllers = ProductController.class)
-@DisplayName("ProductController — WebMvc slice (CAT-US2/US3/US4)")
+@DisplayName("ProductController — WebMvc slice (CAT-US2/US3/US4/US5/US6)")
 @SuppressWarnings({"null", "unused"})
 class ProductControllerCatalogueCatWebMvcTest {
 
@@ -435,5 +535,64 @@ class ProductControllerCatalogueCatWebMvcTest {
                 .andExpect(status().isNoContent());
 
         verify(productService).deleteProduct(eq(1L), any(User.class));
+    }
+
+    // ── CAT-US6: GET /api/products — merchant stock masking ─────────────────
+
+    @Test
+    @DisplayName("GET /api/products as MERCHANT → 200, availabilityCount absent in JSON")
+    void findAll_merchant_masksStock() throws Exception {
+        CatalogueProductDto dto = CatalogueProductDto.fromProduct(
+                new Product("X1", "Test", new BigDecimal("5.00"), 10), true);
+        when(productService.findAllForCatalogue(true)).thenReturn(List.of(dto));
+
+        mockMvc.perform(get("/api/products")
+                        .with(user("merchant").roles("MERCHANT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].availabilityStatus").value("AVAILABLE"))
+                .andExpect(jsonPath("$[0].availabilityCount").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /api/products as ADMIN → 200, availabilityCount present in JSON")
+    void findAll_admin_showsStock() throws Exception {
+        CatalogueProductDto dto = CatalogueProductDto.fromProduct(
+                new Product("X1", "Test", new BigDecimal("5.00"), 10), false);
+        when(productService.findAllForCatalogue(false)).thenReturn(List.of(dto));
+
+        mockMvc.perform(get("/api/products")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].availabilityCount").value(10))
+                .andExpect(jsonPath("$[0].availabilityStatus").value("AVAILABLE"));
+    }
+
+    // ── CAT-US5: GET /api/products/search ───────────────────────────────────
+
+    @Test
+    @DisplayName("GET /api/products/search?q=para → 200 and invokes service")
+    void search_byDescription_returns200() throws Exception {
+        CatalogueProductDto dto = CatalogueProductDto.fromProduct(
+                new Product("PARA1", "Paracetamol 500mg", new BigDecimal("3.50"), 50), false);
+        when(productService.searchProducts(isNull(), eq("para"), isNull(), isNull(), eq(false)))
+                .thenReturn(List.of(dto));
+
+        mockMvc.perform(get("/api/products/search")
+                        .param("q", "para")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].description").value("Paracetamol 500mg"));
+    }
+
+    @Test
+    @DisplayName("GET /api/products/search with no params → 200 (returns all)")
+    void search_noParams_returns200() throws Exception {
+        when(productService.searchProducts(isNull(), isNull(), isNull(), isNull(), eq(false)))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/api/products/search")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
     }
 }

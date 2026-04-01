@@ -119,13 +119,20 @@ function OrderForm({ onOrderPlaced, currentUser }) {
             value={productId}
             onChange={(e) => setProductId(e.target.value)}
           >
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.productCode ? `[${product.productCode}] ` : ""}
-                {product.description} — £{Number(product.price).toFixed(2)} (
-                {product.availabilityCount} in stock)
-              </option>
-            ))}
+            {products.map((product) => {
+              const stockLabel =
+                currentUser?.role === "MERCHANT"
+                  ? product.availabilityStatus === "AVAILABLE"
+                    ? "Available"
+                    : "Out of Stock"
+                  : `${product.availabilityCount} in stock`;
+              return (
+                <option key={product.id} value={product.id}>
+                  {product.productCode ? `[${product.productCode}] ` : ""}
+                  {product.description} — £{Number(product.price).toFixed(2)} ({stockLabel})
+                </option>
+              );
+            })}
           </select>
         </div>
 

@@ -2,16 +2,17 @@
  * ╔══════════════════════════════════════════════════════════════════════════════╗
  * ║  WHAT: Service class for Product-related business logic.                    ║
  * ║                                                                              ║
- * ║  WHY:  Validates catalogue creation rules (CAT-US2) and delegates persistence ║
- * ║        to the repository.                                                    ║
+ * ║  WHY:  Validates catalogue creation rules (CAT-US2), handles product CRUD   ║
+ * ║        (CAT-US3/US4), and provides role-aware search (CAT-US5) with stock   ║
+ * ║        masking for merchants (CAT-US6).                                     ║
  * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add search/filter methods: findByKeyword(String keyword).          ║
  * ║        - Add inventory management: restockProduct(Long id, int qty).        ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.service;
 
+import com.ipos.dto.CatalogueProductDto;
 import com.ipos.dto.CreateProductRequest;
 import com.ipos.dto.UpdateProductRequest;
 import com.ipos.entity.Product;
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -49,6 +51,37 @@ public class ProductService {
 
     public List<Product> findAll() {
         return productRepository.findAll();
+    }
+
+    /**
+     * Returns all products mapped to the role-aware catalogue DTO (CAT-US6).
+     *
+     * @param maskStock true for MERCHANT (hides numeric counts)
+     */
+    @Transactional(readOnly = true)
+    public List<CatalogueProductDto> findAllForCatalogue(boolean maskStock) {
+        return productRepository.findAll().stream()
+                .map(p -> CatalogueProductDto.fromProduct(p, maskStock))
+                .toList();
+    }
+
+    /**
+     * Combined search with AND-logic across optional filters (CAT-US5).
+     * Returns role-aware DTOs with stock masking for merchants (CAT-US6).
+     *
+     * @throws ResponseStatusException 400 if minPrice > maxPrice
+     */
+    @Transactional(readOnly = true)
+    public List<CatalogueProductDto> searchProducts(String productCode, String q,
+                                                     BigDecimal minPrice, BigDecimal maxPrice,
+                                                     boolean maskStock) {
+        if (minPrice != null && maxPrice != null && minPrice.compareTo(maxPrice) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "minPrice must not exceed maxPrice");
+        }
+        return productRepository.search(productCode, q, minPrice, maxPrice).stream()
+                .map(p -> CatalogueProductDto.fromProduct(p, maskStock))
+                .toList();
     }
 
     public Product findById(Long id) {
