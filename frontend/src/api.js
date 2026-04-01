@@ -90,6 +90,44 @@ export async function createProduct(product) {
   return body;
 }
 
+/**
+ * Update an existing product (CAT-US4).
+ * PUT /api/products/{id} with description, price, availabilityCount.
+ *
+ * ACCESS: ADMIN only.
+ */
+export async function updateProduct(id, product) {
+  const response = await fetchWithAuth(`${API_BASE}/products/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      description: product.description,
+      price: product.price,
+      availabilityCount: product.availabilityCount,
+    }),
+  });
+  const body = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
+}
+
+/**
+ * Delete a product (CAT-US3).
+ * DELETE /api/products/{id}.
+ *
+ * ACCESS: ADMIN only.
+ */
+export async function deleteProduct(id) {
+  const response = await fetchWithAuth(`${API_BASE}/products/${id}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const body = await parseResponseBody(response);
+    throw new Error(errorMessageFromBody(body, response));
+  }
+}
+
 /* ── Catalogue (CAT-US1) ─────────────────────────────────────────────────── */
 
 /**

@@ -1,6 +1,6 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Central CAT test source for IPOS-SA-CAT US1 and US2.                ║
+ * ║  WHAT: Central CAT test source for IPOS-SA-CAT US1–US4.                    ║
  * ║                                                                              ║
  * ║  WHY:  Keep catalogue behavior in one file for easier marking/review while   ║
  * ║        following the working style used by MerchantAccountServiceTest:       ║
@@ -12,8 +12,10 @@
  * ║    1) CatalogueCatTest (Mockito unit tests):                                 ║
  * ║       - CAT-US1 initialize/ensure metadata                                   ║
  * ║       - CAT-US2 product create rules                                         ║
+ * ║       - CAT-US3 product delete (audit log, 409 guard, 404)                   ║
+ * ║       - CAT-US4 product update (immutable productCode, 404)                  ║
  * ║    2) ProductControllerCatalogueCatWebMvcTest (WebMvc slice):               ║
- * ║       - DTO validation and successful POST response                          ║
+ * ║       - DTO validation and successful POST/PUT/DELETE responses              ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.cat;
@@ -21,11 +23,18 @@ package com.ipos.cat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ipos.controller.ProductController;
 import com.ipos.dto.CreateProductRequest;
+import com.ipos.dto.UpdateProductRequest;
 import com.ipos.entity.CatalogueMetadata;
 import com.ipos.entity.Product;
+import com.ipos.entity.ProductDeletionLog;
+import com.ipos.entity.User;
 import com.ipos.repository.CatalogueMetadataRepository;
+import com.ipos.repository.OrderItemRepository;
+import com.ipos.repository.ProductDeletionLogRepository;
 import com.ipos.repository.ProductRepository;
+import com.ipos.repository.UserRepository;
 import com.ipos.service.CatalogueService;
+import com.ipos.service.ProductService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,16 +51,21 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.lang.reflect.Method;
-import java.lang.reflect.InvocationTargetException;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @DisplayName("IPOS-SA-CAT — Catalogue & product (CatalogueCatTest)")
@@ -68,20 +82,21 @@ public class CatalogueCatTest {
     @Mock
     private CatalogueService catalogueServiceMock;
 
+    @Mock
+    private OrderItemRepository orderItemRepository;
+
+    @Mock
+    private ProductDeletionLogRepository productDeletionLogRepository;
+
     private CatalogueService catalogueService;
-    private Object productServiceUnderTest;
+    private ProductService productService;
 
     @BeforeEach
     void setUp() {
         catalogueService = new CatalogueService(catalogueMetadataRepository);
-        try {
-            Class<?> clazz = Class.forName("com.ipos.service.ProductService");
-            productServiceUnderTest = clazz
-                    .getConstructor(ProductRepository.class, CatalogueService.class)
-                    .newInstance(productRepository, catalogueServiceMock);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException("Failed to construct ProductService for tests", e);
-        }
+        productService = new ProductService(
+                productRepository, catalogueServiceMock,
+                orderItemRepository, productDeletionLogRepository);
     }
 
     private static CreateProductRequest newCreateRequest(String code, String desc, String price, int avail) {
@@ -93,24 +108,27 @@ public class CatalogueCatTest {
         return r;
     }
 
-    private Product invokeCreateProduct(CreateProductRequest request) {
-        try {
-            Method method = productServiceUnderTest.getClass()
-                    .getMethod("createProduct", CreateProductRequest.class);
-            return (Product) method.invoke(productServiceUnderTest, request);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof ResponseStatusException rse) {
-                throw rse;
-            }
-            throw new RuntimeException("Failed to invoke ProductService#createProduct", e);
-        } catch (ReflectiveOperationException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof ResponseStatusException rse) {
-                throw rse;
-            }
-            throw new RuntimeException("Failed to invoke ProductService#createProduct", e);
-        }
+    private static UpdateProductRequest newUpdateRequest(String desc, String price, int avail) {
+        UpdateProductRequest r = new UpdateProductRequest();
+        r.setDescription(desc);
+        r.setPrice(new BigDecimal(price));
+        r.setAvailabilityCount(avail);
+        return r;
+    }
+
+    private static Product sampleProduct(Long id, String code, String desc, String price, int avail) {
+        Product p = new Product(code, desc, new BigDecimal(price), avail);
+        p.setId(id);
+        return p;
+    }
+
+    private static User sampleAdmin() {
+        User u = new User();
+        u.setId(99L);
+        u.setUsername("admin");
+        u.setName("Admin");
+        u.setRole(User.Role.ADMIN);
+        return u;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -161,7 +179,7 @@ public class CatalogueCatTest {
         when(productRepository.existsByProductCode("ABC-001")).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Product out = invokeCreateProduct(
+        Product out = productService.createProduct(
                 newCreateRequest("  abc-001  ", "Aspirin", "9.99", 12));
 
         assertEquals("ABC-001", out.getProductCode());
@@ -176,7 +194,7 @@ public class CatalogueCatTest {
         when(productRepository.existsByProductCode("DUP")).thenReturn(true);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> invokeCreateProduct(newCreateRequest("DUP", "X", "1.00", 1)));
+                () -> productService.createProduct(newCreateRequest("DUP", "X", "1.00", 1)));
         assertEquals(409, ex.getStatusCode().value());
         verify(productRepository, never()).save(any());
     }
@@ -186,7 +204,7 @@ public class CatalogueCatTest {
     void createProduct_blankCode_badRequest() {
         CreateProductRequest r = newCreateRequest("   ", "X", "1.00", 1);
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> invokeCreateProduct(r));
+                () -> productService.createProduct(r));
         assertEquals(400, ex.getStatusCode().value());
     }
 
@@ -196,7 +214,7 @@ public class CatalogueCatTest {
         when(productRepository.existsByProductCode("X")).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Product out = invokeCreateProduct(
+        Product out = productService.createProduct(
                 newCreateRequest("x", "  trimmed  ", "2.50", 0));
 
         assertEquals("trimmed", out.getDescription());
@@ -209,7 +227,7 @@ public class CatalogueCatTest {
         when(productRepository.existsByProductCode("P1")).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        invokeCreateProduct(newCreateRequest("p1", "Item", "100.00", 5));
+        productService.createProduct(newCreateRequest("p1", "Item", "100.00", 5));
 
         ArgumentCaptor<Product> cap = ArgumentCaptor.forClass(Product.class);
         verify(productRepository).save(cap.capture());
@@ -218,14 +236,109 @@ public class CatalogueCatTest {
         assertEquals(0, new BigDecimal("100.00").compareTo(saved.getPrice()));
         assertEquals(5, saved.getAvailabilityCount());
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  CAT-US3: ProductService#deleteProduct rules
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("CAT-US3: deleteProduct returns 404 when product not found")
+    void deleteProduct_notFound_404() {
+        when(productRepository.findById(999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> productService.deleteProduct(999L, sampleAdmin()));
+        assertEquals(404, ex.getStatusCode().value());
+        verify(productDeletionLogRepository, never()).save(any());
+        verify(productRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("CAT-US3: deleteProduct returns 409 when order items reference product")
+    void deleteProduct_orderHistoryExists_409() {
+        Product product = sampleProduct(1L, "DEL1", "Item", "5.00", 10);
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(orderItemRepository.existsByProduct_Id(1L)).thenReturn(true);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> productService.deleteProduct(1L, sampleAdmin()));
+        assertEquals(409, ex.getStatusCode().value());
+        verify(productDeletionLogRepository, never()).save(any());
+        verify(productRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("CAT-US3: deleteProduct succeeds, saves audit log with actor snapshot")
+    void deleteProduct_success_logsAndDeletes() {
+        Product product = sampleProduct(1L, "DEL1", "Aspirin", "5.00", 10);
+        User admin = sampleAdmin();
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(orderItemRepository.existsByProduct_Id(1L)).thenReturn(false);
+
+        productService.deleteProduct(1L, admin);
+
+        ArgumentCaptor<ProductDeletionLog> logCap = ArgumentCaptor.forClass(ProductDeletionLog.class);
+        verify(productDeletionLogRepository).save(logCap.capture());
+        ProductDeletionLog savedLog = logCap.getValue();
+        assertEquals(1L, savedLog.getProductIdSnapshot());
+        assertEquals("DEL1", savedLog.getProductCodeSnapshot());
+        assertEquals("Aspirin", savedLog.getDescriptionSnapshot());
+        assertEquals(admin, savedLog.getDeletedBy());
+        assertNotNull(savedLog.getDeletedAt());
+
+        verify(productRepository).delete(product);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  CAT-US4: ProductService#updateProduct rules
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("CAT-US4: updateProduct returns 404 when product not found")
+    void updateProduct_notFound_404() {
+        when(productRepository.findById(999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> productService.updateProduct(999L, newUpdateRequest("X", "1.00", 1)));
+        assertEquals(404, ex.getStatusCode().value());
+        verify(productRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("CAT-US4: updateProduct updates fields but never changes productCode")
+    void updateProduct_success_immutableCode() {
+        Product existing = sampleProduct(1L, "ORIG-CODE", "Old desc", "5.00", 10);
+        when(productRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Product result = productService.updateProduct(1L,
+                newUpdateRequest("New desc", "12.50", 20));
+
+        assertEquals("ORIG-CODE", result.getProductCode());
+        assertEquals("New desc", result.getDescription());
+        assertEquals(0, new BigDecimal("12.50").compareTo(result.getPrice()));
+        assertEquals(20, result.getAvailabilityCount());
+    }
+
+    @Test
+    @DisplayName("CAT-US4: updateProduct trims description whitespace")
+    void updateProduct_trimsDescription() {
+        Product existing = sampleProduct(1L, "X", "Old", "1.00", 1);
+        when(productRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Product result = productService.updateProduct(1L,
+                newUpdateRequest("  padded  ", "2.00", 5));
+
+        assertEquals("padded", result.getDescription());
+    }
 }
 
 /*
  * WebMvc slice — same source file as CatalogueCatTest; Surefire discovers *Test classes.
  */
 @WebMvcTest(controllers = ProductController.class)
-@AutoConfigureMockMvc(addFilters = false)
-@DisplayName("ProductController — WebMvc slice (CAT-US2)")
+@DisplayName("ProductController — WebMvc slice (CAT-US2/US3/US4)")
 @SuppressWarnings({"null", "unused"})
 class ProductControllerCatalogueCatWebMvcTest {
 
@@ -236,12 +349,19 @@ class ProductControllerCatalogueCatWebMvcTest {
     private ObjectMapper objectMapper;
 
     @MockitoBean
-    private com.ipos.service.ProductService productService;
+    private ProductService productService;
+
+    @MockitoBean
+    private UserRepository userRepository;
+
+    // ── CAT-US2: POST ───────────────────────────────────────────────────────
 
     @Test
     @DisplayName("POST /api/products with {} → 400 Bad Request (validation)")
     void create_emptyBody_returns400() throws Exception {
         mockMvc.perform(post("/api/products")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
@@ -259,8 +379,61 @@ class ProductControllerCatalogueCatWebMvcTest {
         Product saved = new Product("SKU1", "Item", new BigDecimal("10.00"), 3);
         saved.setId(42L);
         mockMvc.perform(post("/api/products")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isOk());
+    }
+
+    // ── CAT-US4: PUT ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("PUT /api/products/1 with {} → 400 Bad Request (validation)")
+    void update_emptyBody_returns400() throws Exception {
+        mockMvc.perform(put("/api/products/1")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PUT /api/products/1 with valid body → 200")
+    void update_valid_returns200() throws Exception {
+        UpdateProductRequest req = new UpdateProductRequest();
+        req.setDescription("Updated");
+        req.setPrice(new BigDecimal("15.00"));
+        req.setAvailabilityCount(10);
+
+        Product updated = new Product("X", "Updated", new BigDecimal("15.00"), 10);
+        updated.setId(1L);
+        when(productService.updateProduct(eq(1L), any(UpdateProductRequest.class))).thenReturn(updated);
+
+        mockMvc.perform(put("/api/products/1")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk());
+    }
+
+    // ── CAT-US3: DELETE ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("DELETE /api/products/1 → 204 No Content (mocked service)")
+    void delete_success_returns204() throws Exception {
+        User admin = new User();
+        admin.setId(1L);
+        admin.setUsername("admin");
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(admin));
+
+        mockMvc.perform(delete("/api/products/1")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf()))
+                .andExpect(status().isNoContent());
+
+        verify(productService).deleteProduct(eq(1L), any(User.class));
     }
 }

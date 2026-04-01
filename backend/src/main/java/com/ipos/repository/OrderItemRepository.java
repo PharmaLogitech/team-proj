@@ -18,5 +18,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
-    // Inherits: save, findById, findAll, deleteById, etc.
+
+    /** True if any order line item references the given product (CAT-US3 delete guard). */
+    boolean existsByProduct_Id(Long productId);
 }

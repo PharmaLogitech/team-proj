@@ -1,14 +1,13 @@
 /*
- * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Product catalogue — list, CAT-US1 initialize, CAT-US2 admin create.   ║
- * ║                                                                              ║
- * ║  WHY:  Read-only table for all roles; ADMIN gets initialize + add product.   ║
- * ╚══════════════════════════════════════════════════════════════════════════════╝
+ * Product catalogue — list, CAT-US1 initialize, CAT-US2 admin create,
+ * CAT-US3 admin delete (Yes/No modal), CAT-US4 admin edit.
  */
 import { useState, useEffect, useCallback } from "react";
 import {
   getProducts,
   createProduct,
+  updateProduct,
+  deleteProduct,
   getCatalogueStatus,
   initializeCatalogue,
 } from "./api.js";
@@ -34,6 +33,17 @@ function Catalogue() {
   });
   const [createBusy, setCreateBusy] = useState(false);
   const [createMessage, setCreateMessage] = useState(null);
+
+  // CAT-US4: Edit state
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [editForm, setEditForm] = useState({ description: "", price: "", availabilityCount: "" });
+  const [editBusy, setEditBusy] = useState(false);
+  const [editMessage, setEditMessage] = useState(null);
+
+  // CAT-US3: Delete confirmation modal state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState(null);
 
   const loadProducts = useCallback(async () => {
     const data = await getProducts();
@@ -102,6 +112,67 @@ function Catalogue() {
       setCreateMessage(err.message);
     } finally {
       setCreateBusy(false);
+    }
+  };
+
+  // CAT-US4: Start editing a product row
+  const startEdit = (product) => {
+    setEditingProduct(product);
+    setEditForm({
+      description: product.description || "",
+      price: product.price != null ? String(product.price) : "",
+      availabilityCount: product.availabilityCount != null ? String(product.availabilityCount) : "0",
+    });
+    setEditMessage(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingProduct(null);
+    setEditMessage(null);
+  };
+
+  const handleUpdateProduct = async (e) => {
+    e.preventDefault();
+    setEditBusy(true);
+    setEditMessage(null);
+    try {
+      await updateProduct(editingProduct.id, {
+        description: editForm.description.trim(),
+        price: Number(editForm.price),
+        availabilityCount: parseInt(editForm.availabilityCount, 10),
+      });
+      setEditingProduct(null);
+      setEditMessage(null);
+      await loadProducts();
+    } catch (err) {
+      setEditMessage(err.message);
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  // CAT-US3: Delete with Yes/No confirmation
+  const confirmDelete = (product) => {
+    setDeleteTarget(product);
+    setDeleteMessage(null);
+  };
+
+  const cancelDelete = () => {
+    setDeleteTarget(null);
+    setDeleteMessage(null);
+  };
+
+  const handleDeleteProduct = async () => {
+    setDeleteBusy(true);
+    setDeleteMessage(null);
+    try {
+      await deleteProduct(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadProducts();
+    } catch (err) {
+      setDeleteMessage(err.message);
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -238,19 +309,185 @@ function Catalogue() {
               <th>Description</th>
               <th>Price</th>
               <th>In Stock</th>
+              {isAdmin && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {products.map((product) => (
               <tr key={product.id}>
-                <td>{product.productCode ?? "—"}</td>
+                <td>{product.productCode ?? "\u2014"}</td>
                 <td>{product.description}</td>
-                <td>£{Number(product.price).toFixed(2)}</td>
+                <td>&pound;{Number(product.price).toFixed(2)}</td>
                 <td>{product.availabilityCount}</td>
+                {isAdmin && (
+                  <td>
+                    <button
+                      type="button"
+                      className="submit-btn"
+                      style={{ marginRight: "0.5rem", padding: "0.25rem 0.75rem", fontSize: "0.85rem" }}
+                      onClick={() => startEdit(product)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="submit-btn"
+                      style={{ padding: "0.25rem 0.75rem", fontSize: "0.85rem", background: "#dc2626" }}
+                      onClick={() => confirmDelete(product)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {/* CAT-US4: Edit product modal */}
+      {editingProduct && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={cancelEdit}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "8px",
+              padding: "1.5rem",
+              minWidth: "340px",
+              maxWidth: "480px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0 }}>
+              Edit Product: {editingProduct.productCode ?? editingProduct.id}
+            </h3>
+            <form onSubmit={handleUpdateProduct}>
+              <div className="form-group">
+                <label htmlFor="edit-description">Description</label>
+                <input
+                  id="edit-description"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="edit-price">Unit price</label>
+                <input
+                  id="edit-price"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={editForm.price}
+                  onChange={(e) => setEditForm((f) => ({ ...f, price: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="edit-availability">Availability</label>
+                <input
+                  id="edit-availability"
+                  type="number"
+                  min="0"
+                  value={editForm.availabilityCount}
+                  onChange={(e) => setEditForm((f) => ({ ...f, availabilityCount: e.target.value }))}
+                  required
+                />
+              </div>
+              {editMessage && (
+                <p className="status-message error" style={{ marginBottom: "0.75rem" }}>
+                  {editMessage}
+                </p>
+              )}
+              <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+                <button type="button" className="submit-btn" style={{ background: "#64748b" }} onClick={cancelEdit}>
+                  Cancel
+                </button>
+                <button type="submit" className="submit-btn" disabled={editBusy}>
+                  {editBusy ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CAT-US3: Delete confirmation modal (Yes / No) */}
+      {deleteTarget && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={cancelDelete}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "8px",
+              padding: "1.5rem",
+              minWidth: "320px",
+              maxWidth: "440px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0 }}>Confirm Deletion</h3>
+            <p>
+              Are you sure you want to delete product{" "}
+              <strong>{deleteTarget.productCode ?? deleteTarget.id}</strong>
+              {deleteTarget.description ? ` (${deleteTarget.description})` : ""}?
+            </p>
+            {deleteMessage && (
+              <p className="status-message error" style={{ marginBottom: "0.75rem" }}>
+                {deleteMessage}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="submit-btn"
+                style={{ background: "#64748b" }}
+                onClick={cancelDelete}
+                disabled={deleteBusy}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="submit-btn"
+                style={{ background: "#dc2626" }}
+                onClick={handleDeleteProduct}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? "Deleting..." : "Yes"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
