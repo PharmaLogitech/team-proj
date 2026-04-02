@@ -2,13 +2,13 @@
  IPOS-SA-CAT — Electronic Catalogue and Inventory Control — Progress Report
 ================================================================================
 
-Generated     : 2026-04-02
+Generated     : 2026-04-03
 Epic          : Electronic Catalogue and Inventory Control
 Companion doc : ACCprogress.txt (same directory — Account Management)
 
 This document maps each CAT user story (US1–US10) to the current codebase,
-states what is DONE vs NOT DONE, and lists detailed implementation work
-remaining.  File paths are relative to the project root unless noted.
+states what is DONE vs NOT DONE, and notes any remaining gaps.
+File paths are relative to the project root unless noted.
 
 
 ================================================================================
@@ -20,73 +20,160 @@ Goal (from your epic description):
   levels, and monitors inventory thresholds so products remain available.
 
 Current state (high level):
-  • Full product CRUD implemented: create (US2), update (US4), delete with
-    audit log (US3), multi-criteria search (US5), merchant stock masking (US6),
-    stock delivery recording (US7), and minimum stock thresholds (US8).
-  • Remaining: automated low-stock warnings (US9, partial — UI warning shown
-    in admin table when stock ≤ threshold) and low-stock reporting (US10).
-
-Estimated completion for CAT epic (prototype):  Most stories require new
-backend endpoints, entity fields, validation, audit/logging, and frontend
-screens — see per-story sections below.
+  • Full product CRUD is implemented: creation with unique SKU validation
+    (US2), immutable-ID updates (US4), deletion with audit log and order
+    history guard (US3), role-aware browsing with stock masking (US6),
+    multi-criteria search (US5), stock delivery recording (US7), and
+    minimum stock threshold support with UI low-stock warning (US8).
+  • CAT-US1 (catalogue initialization) is partially implemented — the
+    CatalogueMetadata singleton and POST /api/catalogue/initialize endpoint
+    exist, but the initialization step is not strictly enforced as a
+    prerequisite before adding products.
+  • CAT-US9 (automated low-stock warnings) is partially implemented — the
+    admin catalogue table highlights products where stock ≤ threshold in red,
+    but there is no global dashboard banner shown on every login.
+  • CAT-US10 (low-stock reporting) is not started — ReportingPlaceholder.jsx
+    is a stub and no report controller or endpoint exists.
 
 
 ================================================================================
- 2. REFERENCE — KEY FILES TODAY (CAT-RELATED)
+ 2. REFERENCE — KEY FILES (CAT-RELATED)
 ================================================================================
 
 Backend
   entity/Product.java
-    Fields: id (Long, generated), productCode (business Product ID / SKU),
-            description, price (BigDecimal), availabilityCount.
-    No: minStockThreshold, soft-delete / discontinued flag; validation is on
-        DTOs (CreateProductRequest / UpdateProductRequest), not on the entity.
+    Fields: id (Long, PK auto), productCode (String unique, uppercased on save),
+            description (String), price (BigDecimal precision 10,2),
+            availabilityCount (Integer), minStockThreshold (Integer nullable).
+    productCode is immutable after creation (UpdateProductRequest has no field).
+    minStockThreshold: null = no threshold configured.
+
+  entity/StockDelivery.java (NEW — CAT-US7)
+    Fields: id (Long), product (@ManyToOne Product), deliveryDate (LocalDate),
+            quantityReceived (Integer NOT NULL ≥ 1), supplierReference
+            (String nullable, max 255), recordedBy (@ManyToOne User),
+            recordedAt (Instant). Table: stock_deliveries.
+
+  entity/CatalogueMetadata.java (CAT-US1)
+    Singleton row (id=1) recording when the catalogue was first initialized.
+    Checked by CatalogueService.isCatalogueInitialized().
+
+  entity/ProductDeletionLog.java (CAT-US3)
+    Snapshots productIdSnapshot, productCodeSnapshot, descriptionSnapshot,
+    deletedBy (User FK), deletedAt (Instant). Table: product_deletion_logs.
 
   repository/ProductRepository.java
-    JpaRepository<Product, Long> plus existsByProductCode(String) for CAT-US2.
-    search(productCode, q, minPrice, maxPrice) — JPQL combined AND-filter
-    with case-insensitive substring matching (CAT-US5/US6).
+    JpaRepository<Product, Long> plus:
+      existsByProductCode(String) — unique code check for CAT-US2
+      search(productCode, q, minPrice, maxPrice) — @Query JPQL with
+        case-insensitive LIKE and AND-combined filter logic (CAT-US5)
+
+  repository/StockDeliveryRepository.java (NEW — CAT-US7)
+    JpaRepository<StockDelivery, Long>
+
+  repository/ProductDeletionLogRepository.java
+    JpaRepository<ProductDeletionLog, Long>
+
+  repository/OrderItemRepository.java
+    existsByProductId(Long) — prevents hard delete when order items reference
+    the product (returns 409 CONFLICT — CAT-US3)
 
   service/ProductService.java
-    findAll(), findAllForCatalogue(maskStock) → CatalogueProductDto (CAT-US6),
-    searchProducts(productCode, q, minPrice, maxPrice, maskStock) (CAT-US5),
-    findById(Long), createProduct(CreateProductRequest),
-    updateProduct(Long, UpdateProductRequest) (CAT-US4),
-    deleteProduct(Long, User) with ProductDeletionLog + 409 if order items
-    reference the product (CAT-US3).
+    findAll() → List<Product>
+    findAllForCatalogue(boolean maskStock) → List<CatalogueProductDto>
+      maskStock=true for MERCHANT: availabilityCount and minStockThreshold
+      omitted (null → excluded by @JsonInclude NON_NULL), availabilityStatus
+      set to AVAILABLE or OUT_OF_STOCK (CAT-US6, CAT-US8)
+    searchProducts(productCode, q, minPrice, maxPrice, maskStock)
+      → List<CatalogueProductDto> (CAT-US5)
+    findById(Long) → Product or 404
+    createProduct(CreateProductRequest) → Product (CAT-US2, CAT-US8)
+    updateProduct(Long, UpdateProductRequest) → Product (CAT-US4, CAT-US8)
+      null minStockThreshold in request clears existing threshold
+    deleteProduct(Long, User) → void (CAT-US3)
+      Saves ProductDeletionLog, rejects with 409 if order items reference
+      the product, hard-deletes otherwise
+    recordStockDelivery(Long productId, RecordStockDeliveryRequest, User recordedBy)
+      → StockDeliveryResponse (CAT-US7)
+      @Transactional: increments availabilityCount, saves StockDelivery row,
+      returns response including newAvailabilityCount
+
+  service/CatalogueService.java (CAT-US1)
+    initializeCatalogue() → void (idempotent, 409 if already initialized)
+    isCatalogueInitialized() → boolean
 
   controller/ProductController.java
-    GET  /api/products  → role-aware catalogue list (CatalogueProductDto)
-    GET  /api/products/search  → combined search (CAT-US5/US6)
-    POST /api/products  → create (@Valid CreateProductRequest) — CAT-US2
-    PUT  /api/products/{id}  → update (@Valid UpdateProductRequest) — CAT-US4
-    DELETE /api/products/{id}  → remove with audit actor — CAT-US3
+    GET  /api/products              → role-aware catalogue list (CatalogueProductDto)
+    GET  /api/products/search       → combined search (CAT-US5/US6)
+    POST /api/products              → create (@Valid CreateProductRequest) — CAT-US2
+    PUT  /api/products/{id}         → update (@Valid UpdateProductRequest) — CAT-US4
+    DELETE /api/products/{id}       → delete with audit actor — CAT-US3
+    POST /api/products/{id}/deliveries → record delivery (@Valid, @PreAuthorize ADMIN) — CAT-US7
+
+  controller/CatalogueController.java (CAT-US1)
+    POST /api/catalogue/initialize  → initialize catalogue (ADMIN only)
+    GET  /api/catalogue/status      → { initialized: boolean } (ADMIN only)
+
+  dto/CreateProductRequest.java
+    productCode (@NotBlank), description (@NotBlank),
+    price (@NotNull @DecimalMin("0.01")), availabilityCount (@NotNull @Min(0)),
+    minStockThreshold (@Min(0), optional — omit or null = no threshold)
+
+  dto/UpdateProductRequest.java
+    description (@NotBlank), price (@NotNull @DecimalMin("0.01")),
+    availabilityCount (@NotNull @Min(0)),
+    minStockThreshold (@Min(0), optional — null clears existing threshold)
+    NOTE: productCode is intentionally absent (immutable — CAT-US4)
+
+  dto/RecordStockDeliveryRequest.java (NEW — CAT-US7)
+    deliveryDate (@NotNull LocalDate), quantityReceived (@NotNull @Min(1)),
+    supplierReference (@Size(max=255), optional)
+
+  dto/StockDeliveryResponse.java (NEW — CAT-US7)
+    id, productId, productCode, deliveryDate, quantityReceived,
+    supplierReference, recordedByUserId, recordedByUsername,
+    recordedAt, newAvailabilityCount
+    Built via static factory: StockDeliveryResponse.from(delivery, newCount)
+
+  dto/CatalogueProductDto.java
+    id, productCode, description, price,
+    availabilityCount (@JsonInclude NON_NULL — hidden from MERCHANT),
+    availabilityStatus (AVAILABLE | OUT_OF_STOCK),
+    minStockThreshold (@JsonInclude NON_NULL — hidden from MERCHANT — CAT-US8)
+    Static factory: fromProduct(Product, boolean maskStock)
 
   security/SecurityConfig.java
-    GET  /api/products/**  → authenticated (all roles)
-    POST/PUT/DELETE /api/products/**  → ADMIN only (matches implemented
-                                        controller methods)
-
-  service/OrderService.java
-    On order placement: validates sufficient availabilityCount, then decrements
-    stock per line item (transactional rollback on failure).
+    GET  /api/products/**              → authenticated (all roles)
+    POST /api/products/**              → hasRole("ADMIN")
+    PUT  /api/products/**              → hasRole("ADMIN")
+    DELETE /api/products/**            → hasRole("ADMIN")
+    @EnableMethodSecurity enabled for @PreAuthorize on recordDelivery (US7)
+    /api/catalogue/**                  → hasRole("ADMIN")
+    /api/reports/**                    → hasAnyRole("MANAGER","ADMIN")
 
 Frontend
   src/Catalogue.jsx
-    Fetches GET /api/products (role-aware DTO); search via GET /api/products/search.
-    ADMIN: catalogue init + create product, edit modal (CAT-US4), delete
-    confirmation Yes/No (CAT-US3), full search form, numeric stock column.
-    MERCHANT: search by description; "Availability" column shows Available /
-    Out of Stock (CAT-US6 masking). "No products found" on empty search.
+    Fetches GET /api/products (role-aware DTO), search via GET /api/products/search.
+    ADMIN: catalogue init + create product form (with optional minStockThreshold
+      field), edit modal (with minStockThreshold), delete confirmation Yes/No modal,
+      "+ Stock" delivery modal (deliveryDate, quantityReceived, optional
+      supplierReference), full search form (Product ID, description, price range).
+    MANAGER: same table as admin (numeric stock + Min Stock column) but no
+      admin action buttons.
+    MERCHANT: description-only search; "Availability" column shows Available /
+      Out of Stock (CAT-US6 masking); no Min Stock column.
+    Low-stock warning: admin/manager table shows Min Stock cell in red with ⚠
+      when availabilityCount ≤ minStockThreshold (CAT-US8/US9 partial).
 
   src/api.js
     getProducts(), searchProducts({productCode, q, minPrice, maxPrice}),
-    createProduct(), updateProduct(id, body), deleteProduct(id).
-    Still no recordDelivery, etc.
+    createProduct(product), updateProduct(id, product), deleteProduct(id),
+    recordDelivery(productId, {deliveryDate, quantityReceived, supplierReference}),
+    getCatalogueStatus(), initializeCatalogue().
 
-  src/OrderForm.jsx (IPOS-SA-ORD, but affects CAT-US6)
-    Product dropdown shows: description, price, and "X in stock" using
-    availabilityCount — merchants see exact stock levels.
+  src/OrderForm.jsx (ORD, but affects CAT-US6)
+    Product dropdown shows: description, price, and availability label for
+    MERCHANT ("Available" / "Out of Stock") instead of raw count.
 
   src/ReportingPlaceholder.jsx + /api/reports/**
     Reporting is a stub; no low-stock report endpoint or UI (CAT-US10).
@@ -96,7 +183,8 @@ Frontend
  3. USER STORY STATUS MATRIX
 ================================================================================
 
-  US1  Catalogue Initialization          PARTIAL (implicit schema only)
+  US1  Catalogue Initialization          PARTIAL (endpoint + metadata exist;
+                                          not enforced as prerequisite)
   US2  Product Creation                  DONE
   US3  Product Discontinuation/Removal   DONE
   US4  Product Data Maintenance          DONE
@@ -104,7 +192,8 @@ Frontend
   US6  Merchant Catalogue Browsing       DONE
   US7  Stock Delivery Recording          DONE
   US8  Minimum Stock Thresholds          DONE
-  US9  Automated Low-Stock Warnings      PARTIAL (UI warning in admin table)
+  US9  Automated Low-Stock Warnings      PARTIAL (table-level warning only;
+                                          no global banner on login)
   US10 Low-Stock Reporting (RPRT)        NOT STARTED
 
 
@@ -124,57 +213,36 @@ ACCEPTANCE CRITERION 1:
   "The system must allow the creation of a new catalogue only if one does
    not exist already."
 
-  STATUS: ⚠️  INTERPRETATION-DEPENDENT / MOSTLY IMPLICIT
+  STATUS: ⚠️  PARTIAL
 
-  DONE TODAY:
-    • The application uses a single JPA entity mapped to table "products".
-      Hibernate ddl-auto creates the table when the app starts against an
-      empty database — there is no second "catalogue" to duplicate in the
-      relational model.
+  DONE:
+    • CatalogueMetadata entity (singleton row, id=1) records the initialization
+      timestamp. CatalogueService.initializeCatalogue() checks this row and
+      returns 409 CONFLICT if already initialized.
+    • POST /api/catalogue/initialize (ADMIN only) is implemented.
+    • Frontend: "Initialize catalogue" button in Catalogue.jsx admin panel;
+      disabled once catalogue is registered.
 
-  NOT DONE / GAP:
-    • There is NO explicit administrator workflow or API such as
-      "POST /api/catalogue/initialize" that checks "catalogue exists?" and
-      returns 409 if already present.
-    • If your marker expects a visible "create catalogue" action in the UI
-      or a dedicated Catalogue aggregate (separate from Product rows), that
-      is NOT implemented.
-
-  WORK TO COMPLETE (if strict compliance needed):
-    • Decide model: single implicit catalogue (document as acceptable per
-      brief footnote: optional catalogue creation) OR add a catalogue
-      metadata table (e.g. catalogues: id, name, created_at) with at-most-one
-      active row enforced by app logic or DB constraint.
-    • If required: Admin-only endpoint + optional UI "Initialize catalogue"
-      that fails when products table already has rows or when catalogue
-      record exists.
+  REMAINING GAP:
+    • Initialization is not enforced as a hard prerequisite before products
+      can be added. An admin can POST /api/products without ever calling
+      /api/catalogue/initialize (the products table is always present via
+      Hibernate ddl-auto=update).
+    • Documenting this as acceptable for the prototype should be sufficient
+      for most marking criteria.
 
 
 ACCEPTANCE CRITERION 2:
   "The system must initialize the catalogue with the appropriate fields such
    as Product ID, Description, Unit Price, and Availability with the correct
-   data types (e.g. int, String)."
+   data types."
 
-  STATUS: ⚠️  PARTIAL — FIELD MAPPING DIFFERS FROM WORDING
+  STATUS: ✅  MET
 
-  DONE TODAY:
-    • description  → String  ✅
-    • unit price   → BigDecimal (mapped to DECIMAL in DB) ✅  (preferred over
-                     double for money; acceptable vs "numeric type")
-    • availability → Integer (availabilityCount) ✅
-
-  GAPS VS STORY WORDING:
-    • "Product ID" in the story often implies a business identifier (SKU)
-      separate from the database primary key.  Today the only identifier is
-      id: Long, auto-generated by the database — you cannot assign a custom
-      product code at creation time via the API as specified in US2/US4.
-
-  WORK TO COMPLETE:
-    • Add optional or required productCode / sku field (String) with UNIQUE
-      constraint, OR document that surrogate Long id is the Product ID for
-      the prototype (and align US2 "unique Product ID" with that).
-    • Add Jakarta Bean Validation on DTOs (@NotBlank, @DecimalMin, @Min(0))
-      aligned with US2/US4.
+  DONE:
+    • Product entity: productCode (String/SKU), description (String),
+      price (BigDecimal — preferred over double for money), availabilityCount
+      (Integer). All mapped to appropriate DB column types.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -185,63 +253,38 @@ Title:
   As an Administrator, I want to add new products to the catalogue so that
   they are available for merchants to order.
 
-Description:
-  Requires Product ID, Description, Unit Price, and Availability.
-
 ACCEPTANCE CRITERION 1:
   "The system must enforce a unique Product ID for every new entry."
 
-  STATUS: ❌  NOT MET AS STATED
+  STATUS: ✅  DONE
 
-  TODAY:
-    • Database primary key id is unique by definition (auto-increment).
-    • There is NO separate user-supplied Product ID field; duplicates of
-      description are allowed.
-
-  WORK TO COMPLETE:
-    • Introduce business key (e.g. productCode) with @Column(unique=true)
-      OR enforce uniqueness on description if that is your chosen ID.
-    • Repository method existsBy… + service check before save; return 409
-      Conflict with clear message.
+  IMPLEMENTED:
+    • productCode field with @Column(unique=true) on Product entity.
+    • ProductRepository.existsByProductCode() called in createProduct();
+      returns 409 CONFLICT with message if code already exists.
+    • CreateProductRequest: @NotBlank on productCode.
 
 
 ACCEPTANCE CRITERION 2:
   "The system must validate that the Unit Price is greater than zero."
 
-  STATUS: ❌  NOT ENFORCED IN API LAYER
+  STATUS: ✅  DONE
 
-  TODAY:
-    • ProductController passes body straight to ProductService.save with no
-      @Valid DTO.  Null or zero price can be persisted depending on client.
-
-  WORK TO COMPLETE:
-    • CreateProductRequest DTO with @NotNull @DecimalMin("0.01") on price
-      (or "> 0" as per story).
-    • Validate in service and return 400 with message if invalid.
+  IMPLEMENTED:
+    • CreateProductRequest: @NotNull @DecimalMin("0.01") on price.
+    • Returns 400 Bad Request with field error on violation.
 
 
 ACCEPTANCE CRITERION 3:
   "The system must validate that Availability is not a negative value."
 
-  STATUS: ❌  NOT ENFORCED IN API LAYER
+  STATUS: ✅  DONE
 
-  TODAY:
-    • No @Min(0) on entity or DTO for availabilityCount.
-
-  WORK TO COMPLETE:
-    • DTO: @NotNull @Min(0) on availability (story says "not negative";
-      confirm whether zero is allowed for "listed but out of stock").
-
-ADDITIONAL GAP (common expectation):
-  "Administrator adds products"
-    • api.js exports createProduct(), but there is NO React admin page wired
-      in App.jsx for catalogue management — products are expected to be added
-      via API client, Postman, or SQL.
-
-  WORK TO COMPLETE:
-    • Admin-only page e.g. CatalogueAdmin.jsx: form fields for ID/code,
-      description, price, availability; call POST /api/products; show
-      validation errors from backend.
+  IMPLEMENTED:
+    • CreateProductRequest: @NotNull @Min(0) on availabilityCount.
+    • Returns 400 Bad Request with field error on violation.
+    • Admin UI: "Add product" form in Catalogue.jsx with all required
+      fields plus optional Min Stock threshold (CAT-US8).
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -259,9 +302,9 @@ ACCEPTANCE CRITERION 1:
   STATUS: ✅  DONE
 
   IMPLEMENTED:
-    • DELETE /api/products/{id} endpoint on ProductController (ADMIN only).
-    • Frontend: Catalogue.jsx shows a modal with "Yes" / "No" buttons
-      before calling DELETE. Only on "Yes" does the API call fire.
+    • DELETE /api/products/{id} endpoint (ADMIN only).
+    • Catalogue.jsx: "Delete" button opens a confirmation modal with product
+      name and Yes / No buttons. API call fires only on "Yes".
 
 
 ACCEPTANCE CRITERION 2:
@@ -271,13 +314,12 @@ ACCEPTANCE CRITERION 2:
   STATUS: ✅  DONE
 
   IMPLEMENTED:
-    • New entity ProductDeletionLog (table product_deletion_logs): snapshots
+    • ProductDeletionLog entity (table product_deletion_logs): snapshots
       productId, productCode, description, deletedBy (User FK), deletedAt.
-    • ProductService.deleteProduct() saves the log and deletes the product
-      in a single @Transactional method.
-    • Hard delete only when no order_items reference the product; otherwise
-      returns 409 CONFLICT (preserves historical order integrity).
-    • Mirrors the StandingChangeLog pattern from ACC-US5.
+    • ProductService.deleteProduct() saves the log and deletes in a single
+      @Transactional operation.
+    • Returns 409 CONFLICT if any order_items reference the product
+      (preserves historical order integrity — hard delete is blocked).
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -294,10 +336,9 @@ ACCEPTANCE CRITERION 1:
   STATUS: ✅  DONE
 
   IMPLEMENTED:
-    • PUT /api/products/{id} endpoint on ProductController (ADMIN only).
-    • UpdateProductRequest DTO has NO productCode field — the Product ID
-      is immutable. Only description, price, and availabilityCount can be
-      changed. Path variable id (surrogate PK) is the sole identifier.
+    • UpdateProductRequest DTO has no productCode field — the Product ID is
+      immutable. Path variable {id} (surrogate PK) is the sole identifier.
+    • PUT /api/products/{id} returns 404 if the product does not exist.
 
 
 ACCEPTANCE CRITERION 2:
@@ -307,11 +348,10 @@ ACCEPTANCE CRITERION 2:
   STATUS: ✅  DONE
 
   IMPLEMENTED:
-    • UpdateProductRequest DTO: @NotNull @DecimalMin("0.01") on price
-      (greater than zero, matching US2); @NotNull @Min(0) on availabilityCount.
-    • api.js: updateProduct(id, payload) → PUT /api/products/{id}.
-    • Admin UI: Catalogue.jsx edit modal prefilled from row; submit calls
-      updateProduct; validation errors surfaced to user.
+    • UpdateProductRequest: @NotNull @DecimalMin("0.01") on price;
+      @NotNull @Min(0) on availabilityCount; @Min(0) on minStockThreshold.
+    • Admin UI: edit modal pre-filled from current row; validation errors
+      surfaced to user. Includes optional Min Stock threshold field (CAT-US8).
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -320,20 +360,20 @@ ACCEPTANCE CRITERION 2:
 
 Title:
   As an Administrator, I want to search for products using multiple criteria
-  so that I can quickly locate products and see all of the information
-  relating to the product.
+  so that I can quickly locate products and see all related information.
 
 ACCEPTANCE CRITERION 1:
   "The system must allow searching by Product ID, Description, or Price Range."
 
   STATUS: ✅  DONE
 
-  IMPLEMENTATION:
+  IMPLEMENTED:
     • GET /api/products/search?productCode=&q=&minPrice=&maxPrice=
-      All params optional, AND-combined. JPQL @Query in ProductRepository.
-    • Catalogue.jsx search form: Product ID, Description, Min/Max price
-      inputs with Search / Clear buttons (admin/manager see all fields;
-      merchant sees description only).
+      All params optional; combined with AND logic.
+    • ProductRepository.search() — @Query JPQL with case-insensitive LIKE
+      and null-safe parameter handling.
+    • Admin/Manager UI: full search form (Product ID, description, min/max
+      price). Merchant UI: description-only search (CAT-US6 scoping).
 
 
 ACCEPTANCE CRITERION 2:
@@ -341,9 +381,9 @@ ACCEPTANCE CRITERION 2:
 
   STATUS: ✅  DONE
 
-  IMPLEMENTATION:
+  IMPLEMENTED:
     • Backend returns 200 + [].
-    • Catalogue.jsx shows "No products found." when search returns empty.
+    • Catalogue.jsx: "No products found." shown when search result is empty.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -358,12 +398,12 @@ ACCEPTANCE CRITERION 1:
   "The system must provide Read-Only access, the merchant cannot edit any
    catalogue details."
 
-  STATUS: ✅  MET
+  STATUS: ✅  DONE
 
-  IMPLEMENTATION:
+  IMPLEMENTED:
     • Spring Security: MERCHANT cannot POST/PUT/DELETE /api/products.
-    • Catalogue.jsx hides admin controls (init, create, edit, delete)
-      when role is not ADMIN.
+    • Catalogue.jsx: admin controls (init, create, edit, delete, + stock)
+      are hidden when role is not ADMIN.
 
 
 ACCEPTANCE CRITERION 2:
@@ -372,24 +412,25 @@ ACCEPTANCE CRITERION 2:
 
   STATUS: ✅  DONE
 
-  IMPLEMENTATION:
-    • CatalogueProductDto with @JsonInclude(NON_NULL) on availabilityCount.
-      For MERCHANT: availabilityCount is null (omitted from JSON),
-      availabilityStatus is "AVAILABLE" or "OUT_OF_STOCK".
+  IMPLEMENTED:
+    • CatalogueProductDto: for MERCHANT, availabilityCount is null
+      (@JsonInclude NON_NULL omits it from JSON), availabilityStatus is
+      "AVAILABLE" or "OUT_OF_STOCK". minStockThreshold is also null/omitted.
     • Catalogue.jsx "Availability" column shows text labels for MERCHANT.
-    • OrderForm.jsx dropdown shows "Available" / "Out of Stock" for MERCHANT
-      instead of numeric "X in stock".
+    • OrderForm.jsx product dropdown shows availability label for MERCHANT
+      instead of numeric count.
+    • Merchant table hides Product ID column and Min Stock column.
 
 
 ACCEPTANCE CRITERION 3:
   "The system must allow for products to be searched from incomplete words
-   (para -> can search for paracetamol)"
+   (para → can search for paracetamol)."
 
   STATUS: ✅  DONE
 
-  IMPLEMENTATION:
+  IMPLEMENTED:
     • JPQL: LOWER(p.description) LIKE LOWER(CONCAT('%', :q, '%')).
-    • Catalogue.jsx search bar with description field available to all roles.
+    • Catalogue.jsx: description search field available to all roles.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -403,37 +444,44 @@ Title:
 ACCEPTANCE CRITERION 1:
   "The system must record the delivery date and the quantity received."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • New entity StockDelivery (or GoodsReceipt): id, productId FK,
-      deliveryDate (LocalDate/Instant), quantityReceived, optional supplier
-      ref, createdBy.
-    • POST /api/products/{id}/deliveries or POST /api/stock/deliveries.
+  IMPLEMENTED:
+    • StockDelivery entity (table stock_deliveries): deliveryDate (LocalDate),
+      quantityReceived, optional supplierReference (max 255 chars),
+      recordedBy (User FK), recordedAt (Instant).
+    • POST /api/products/{id}/deliveries (ADMIN only).
+    • StockDeliveryRepository persists the record.
+    • Frontend: "+ Stock" button per row opens delivery modal with date,
+      quantity, and optional supplier reference inputs.
 
 
 ACCEPTANCE CRITERION 2:
   "The system must automatically increment the Availability of the product by
    the delivery quantity."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • In transactional service: load Product, add quantity to
-      availabilityCount, save delivery row.
+  IMPLEMENTED:
+    • ProductService.recordStockDelivery() is @Transactional:
+        current = product.availabilityCount ?? 0  (null-safe for legacy rows)
+        newCount = current + request.quantityReceived
+        product.availabilityCount = newCount; productRepository.save(product)
+        stockDeliveryRepository.save(delivery)
+    • StockDeliveryResponse includes newAvailabilityCount so the frontend
+      can display the updated count immediately.
+    • Catalogue.jsx refreshes the product list after a successful delivery.
 
 
 ACCEPTANCE CRITERION 3:
   "The system must reject any delivery quantity equal to or less than zero."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • DTO @Min(1) on quantityReceived.
-
-NOTE:
-  Today stock only INCREASES implicitly if someone POSTs a product with
-  higher availability or manually updates DB — there is no delivery workflow.
+  IMPLEMENTED:
+    • RecordStockDeliveryRequest: @NotNull @Min(1) on quantityReceived.
+    • Returns 400 Bad Request if quantity is 0 or negative.
+    • Frontend input: min="1" on the quantity field.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -442,28 +490,34 @@ NOTE:
 
 Title:
   As an Administrator, I want to set minimum stock thresholds for each item
-  so that the system can flag when a product reaches low enough levels of
-  stock.
+  so that the system can flag when a product reaches low stock levels.
 
 ACCEPTANCE CRITERION 1:
   "The system must allow a specific minimum stock threshold value to be
    assigned to each unique Product ID."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • Add column min_stock_threshold (Integer, NOT NULL, default 0 or nullable
-      meaning "no threshold").
-    • Expose on create/update DTOs and admin UI.
+  IMPLEMENTED:
+    • minStockThreshold (Integer nullable) on Product entity.
+      Null = no threshold configured. Hibernate adds column automatically.
+    • Exposed in CreateProductRequest and UpdateProductRequest (both optional).
+      Null in update request clears an existing threshold.
+    • Included in CatalogueProductDto for ADMIN/MANAGER; omitted (null)
+      for MERCHANT via @JsonInclude NON_NULL.
+    • Admin "Add product" form and edit modal both include an optional
+      "Min stock (opt.)" input field.
 
 
 ACCEPTANCE CRITERION 2:
   "The system must validate that threshold values are not negative."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • @Min(0) on threshold field.
+  IMPLEMENTED:
+    • @Min(0) on minStockThreshold in both CreateProductRequest and
+      UpdateProductRequest. Returns 400 if negative value supplied.
+    • Frontend input: min="0" on the threshold field.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -472,37 +526,45 @@ ACCEPTANCE CRITERION 2:
 
 Title:
   As an Administrator, I want to receive automated UI warnings when stock
-  falls below thresholds set so that I can trigger the re-ordering process
-  to replenish the stock.
+  falls below thresholds so that I can trigger the re-ordering process.
 
 ACCEPTANCE CRITERION 1:
   "The system must automatically flag a product in the UI when Current
    Availability < Threshold."
 
-  STATUS: ❌  NOT STARTED (depends on US8)
+  STATUS: ⚠️  PARTIAL
 
-  WORK TO COMPLETE:
-    • Admin catalogue view: badge/icon/row class when
-      availabilityCount < minStockThreshold.
-    • Optional: global banner "N products below minimum stock" after login
-      for ADMIN (story says "every time they use IPOS-SA" in full brief —
-      interpret as persistent warning on catalogue/dashboard).
+  DONE:
+    • Catalogue.jsx admin/manager table: the "Min Stock" cell is rendered
+      in red with a ⚠ symbol when availabilityCount ≤ minStockThreshold.
+      This is visible immediately without any user action.
+
+  NOT DONE:
+    • No global banner (e.g. "3 products below minimum stock") shown on
+      the navigation bar or dashboard after login. The broader brief mentions
+      warnings "every time they use IPOS-SA" — a persistent banner is the
+      natural interpretation but has not been implemented.
 
 
 ACCEPTANCE CRITERION 2:
   "The warning must include the Product ID, Description and current stock
    level."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ⚠️  PARTIAL
 
-  WORK TO COMPLETE:
-    • Ensure flagged row or tooltip shows id (or product code), description,
-      availabilityCount.
+  DONE:
+    • The flagged table row shows Product ID (productCode), Description,
+      In Stock count, and Min Stock threshold in the same row — all
+      information is visible in context.
 
+  NOT DONE:
+    • There is no dedicated warning panel or tooltip that explicitly lists
+      only the low-stock fields (e.g. a summary list separate from the table).
 
-NOTE:
-  Managers may also need visibility per full case-study brief; your story
-  text says Administrator — confirm if MANAGER should see the same warnings.
+  WORK TO COMPLETE (if full compliance needed):
+    • Add a warning banner component that fetches products where
+      availabilityCount ≤ minStockThreshold and displays product code,
+      description, and current count — shown persistently for ADMIN users.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -520,10 +582,9 @@ ACCEPTANCE CRITERION 1:
   STATUS: ❌  NOT STARTED
 
   WORK TO COMPLETE:
-    • Backend: GET /api/reports/low-stock or /api/products/low-stock returning
-      list of products where availabilityCount < minStockThreshold (and
-      threshold defined).
-    • Requires US8 fields in DB.
+    • Backend: GET /api/reports/low-stock returning products where
+      availabilityCount ≤ minStockThreshold and threshold is not null.
+    • Access: MANAGER and ADMIN (SecurityConfig already secures /api/reports/**).
 
 
 ACCEPTANCE CRITERION 2:
@@ -533,7 +594,7 @@ ACCEPTANCE CRITERION 2:
   STATUS: ❌  NOT STARTED
 
   WORK TO COMPLETE:
-    • Read-only query at request time (no stale cache).
+    • Simple read-only @Query in ProductRepository; no caching needed.
 
 
 ACCEPTANCE CRITERION 3:
@@ -543,64 +604,68 @@ ACCEPTANCE CRITERION 3:
 
   TODAY:
     • frontend/src/ReportingPlaceholder.jsx is a stub.
-    • /api/reports/** is secured for MANAGER + ADMIN but no report controllers
-      implemented (verify with grep — no ReportController in project).
+    • /api/reports/** is secured for MANAGER + ADMIN but no controller exists.
 
   WORK TO COMPLETE:
-    • Add Reporting UI section "Low stock report" inside RPRT page (or
-      dedicated sub-route).
-    • Wire Manager role to fetch report API; optional print stylesheet or
-      window.print() for "printed when required" from broader brief.
+    • ReportController with GET /api/reports/low-stock.
+    • Add a "Low stock" section inside ReportingPlaceholder.jsx (or replace
+      it) that fetches the report and displays a table of at-risk products.
 
 
 ================================================================================
- 5. SUGGESTED IMPLEMENTATION ORDER (ENGINEERING)
+ 5. TESTING COVERAGE (CAT)
 ================================================================================
 
-  1. US2 hardening — DTOs + validation + unique business ID + Admin UI create
-     (unblocks real data entry without Postman).
+  Tests live in: backend/src/test/java/com/ipos/cat/CatalogueCatTest.java
 
-  2. US4 + US3 — PUT + DELETE (with confirmation + audit log); decide soft vs
-     hard delete for order history.
+  CatalogueCatTest (28 Mockito unit tests) covers:
+    • CAT-US2: createProduct — duplicate code 409, blank code 400, price
+      normalization, all fields persisted including minStockThreshold
+    • CAT-US3: deleteProduct — 404, 409 guard (order items exist), success
+      with audit log saved
+    • CAT-US4: updateProduct — 404, immutable product code, description trim,
+      minStockThreshold persisted and cleared on null
+    • CAT-US5: searchProducts — invalid price range 400, delegate to repo,
+      all-null returns all products
+    • CAT-US6: findAllForCatalogue — MERCHANT sees masked stock (null count,
+      null threshold), ADMIN sees full numeric view
+    • CAT-US7: recordStockDelivery — 404, success increments count correctly,
+      null stock treated as 0 (null-safe)
+    • CAT-US8: minStockThreshold persisted on create, null leaves null,
+      persisted on update, null in update clears field
 
-  3. US5 — Admin search API + UI.
+  ProductControllerCatalogueCatWebMvcTest (15 WebMvc slice tests) covers:
+    • CAT-US2: empty body → 400, valid body → 200
+    • CAT-US4: empty body → 400, valid body → 200, minStockThreshold=-1 → 400,
+      minStockThreshold=5 → 200
+    • CAT-US3: success → 204
+    • CAT-US5/US6: GET /search by description → 200, no params → 200,
+      MERCHANT masked stock via GET /api/products, ADMIN full view
+    • CAT-US7: valid delivery → 201, quantity=0 → 400, MERCHANT → 403,
+      empty body → 400
 
-  4. US6 — Merchant stock masking + partial search on merchant catalogue view.
-
-  5. US8 — min threshold column + admin edit.
-
-  6. US7 — delivery entity + increment stock + admin UI.
-
-  7. US9 — low-stock highlighting + optional dashboard banner for admin.
-
-  8. US10 — low-stock report API + integrate into Reporting (RPRT) page.
-
-  9. US1 — Only if assessors require explicit "create catalogue" operation;
-     otherwise document single-table implicit catalogue as acceptable optional
-     path per case-study wording.
-
-
-================================================================================
- 6. TESTING GAPS (FUTURE)
-================================================================================
-
-  • No dedicated ProductServiceTest / ProductControllerTest in repo (unlike
-    MerchantAccountServiceTest for ACC).
-  • Future tests should cover: validation on create/update, unique constraint,
-    delete audit log, search query combinations, delivery increment atomicity,
-    merchant DTO never exposes stock count, low-stock query correctness.
+  No CAT-US1 or CAT-US9/US10 tests exist yet.
 
 
 ================================================================================
- 7. CROSS-PACKAGE NOTES
+ 6. CROSS-PACKAGE NOTES
 ================================================================================
 
-  • ORD (OrderService) already decreases availabilityCount — any new stock
-    rules (reservations, back-order) must stay consistent with CAT-US7.
-  • RPRT package is shared with other reports; low-stock is one slice of
-    CAT-US10 only.
-  • Currency display: Catalogue.jsx uses "$" prefix for price — brief uses £;
-    align formatting with OrderForm (which uses £) for consistency.
+  • ORD (OrderService) decrements availabilityCount on order placement.
+    CAT-US7 increments it. Both operations are @Transactional and operate
+    on the same column — no conflict, but concurrent high-volume operations
+    should be reviewed for optimistic locking if needed in production.
+
+  • RPRT: /api/reports/** is already secured (MANAGER/ADMIN). CAT-US10 is
+    the only outstanding report needed under the CAT epic.
+
+  • StockDelivery.deliveryDate is LocalDate (not Instant/ZonedDateTime) to
+    avoid timezone ambiguity — a delivery date is a calendar date, not a
+    moment in time.
+
+  • Currency display: all monetary values use £ (GBP) in the frontend
+    (Catalogue.jsx, OrderForm.jsx). Backend uses BigDecimal with precision
+    10,2 for prices and 12,2 for totals/limits.
 
 
 ================================================================================
