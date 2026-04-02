@@ -2,7 +2,7 @@
  IPOS-SA-CAT — Electronic Catalogue and Inventory Control — Progress Report
 ================================================================================
 
-Generated     : 2026-04-03
+Generated     : 2026-04-03 (updated)
 Epic          : Electronic Catalogue and Inventory Control
 Companion doc : ACCprogress.txt (same directory — Account Management)
 
@@ -29,11 +29,13 @@ Current state (high level):
     CatalogueMetadata singleton and POST /api/catalogue/initialize endpoint
     exist, but the initialization step is not strictly enforced as a
     prerequisite before adding products.
-  • CAT-US9 (automated low-stock warnings) is partially implemented — the
-    admin catalogue table highlights products where stock ≤ threshold in red,
-    but there is no global dashboard banner shown on every login.
-  • CAT-US10 (low-stock reporting) is not started — ReportingPlaceholder.jsx
-    is a stub and no report controller or endpoint exists.
+  • CAT-US9 (automated low-stock warnings) is fully implemented — the admin
+    catalogue table highlights products where stock < threshold in red with
+    ⚠, and a persistent low-stock banner in App.jsx warns ADMIN users on
+    every page with expandable product details.
+  • CAT-US10 (low-stock reporting) is fully implemented — GET
+    /api/reports/low-stock (ReportController) returns real-time low-stock
+    data; ReportingPlaceholder.jsx displays the report table with Refresh.
 
 
 ================================================================================
@@ -67,6 +69,8 @@ Backend
       existsByProductCode(String) — unique code check for CAT-US2
       search(productCode, q, minPrice, maxPrice) — @Query JPQL with
         case-insensitive LIKE and AND-combined filter logic (CAT-US5)
+      findLowStockProducts() — @Query JPQL: minStockThreshold IS NOT NULL
+        AND COALESCE(availabilityCount, 0) < minStockThreshold (CAT-US9/US10)
 
   repository/StockDeliveryRepository.java (NEW — CAT-US7)
     JpaRepository<StockDelivery, Long>
@@ -86,6 +90,8 @@ Backend
       set to AVAILABLE or OUT_OF_STOCK (CAT-US6, CAT-US8)
     searchProducts(productCode, q, minPrice, maxPrice, maskStock)
       → List<CatalogueProductDto> (CAT-US5)
+    getLowStockProducts() → List<LowStockProductDto> (CAT-US9/US10)
+      @Transactional(readOnly=true), no caching for real-time accuracy
     findById(Long) → Product or 404
     createProduct(CreateProductRequest) → Product (CAT-US2, CAT-US8)
     updateProduct(Long, UpdateProductRequest) → Product (CAT-US4, CAT-US8)
@@ -109,6 +115,10 @@ Backend
     PUT  /api/products/{id}         → update (@Valid UpdateProductRequest) — CAT-US4
     DELETE /api/products/{id}       → delete with audit actor — CAT-US3
     POST /api/products/{id}/deliveries → record delivery (@Valid, @PreAuthorize ADMIN) — CAT-US7
+
+  controller/ReportController.java (CAT-US10)
+    GET /api/reports/low-stock → List<LowStockProductDto>
+    Secured by /api/reports/** → MANAGER, ADMIN (SecurityConfig)
 
   controller/CatalogueController.java (CAT-US1)
     POST /api/catalogue/initialize  → initialize catalogue (ADMIN only)
@@ -134,6 +144,10 @@ Backend
     supplierReference, recordedByUserId, recordedByUsername,
     recordedAt, newAvailabilityCount
     Built via static factory: StockDeliveryResponse.from(delivery, newCount)
+
+  dto/LowStockProductDto.java (NEW — CAT-US9/US10)
+    id, productCode, description, availabilityCount (0 if null),
+    minStockThreshold. Static factory: fromProduct(Product).
 
   dto/CatalogueProductDto.java
     id, productCode, description, price,
@@ -163,20 +177,29 @@ Frontend
     MERCHANT: description-only search; "Availability" column shows Available /
       Out of Stock (CAT-US6 masking); no Min Stock column.
     Low-stock warning: admin/manager table shows Min Stock cell in red with ⚠
-      when availabilityCount ≤ minStockThreshold (CAT-US8/US9 partial).
+      when availabilityCount < minStockThreshold (strict < per US9).
 
   src/api.js
     getProducts(), searchProducts({productCode, q, minPrice, maxPrice}),
     createProduct(product), updateProduct(id, product), deleteProduct(id),
     recordDelivery(productId, {deliveryDate, quantityReceived, supplierReference}),
+    getLowStockReport() (CAT-US10),
     getCatalogueStatus(), initializeCatalogue().
 
   src/OrderForm.jsx (ORD, but affects CAT-US6)
     Product dropdown shows: description, price, and availability label for
     MERCHANT ("Available" / "Out of Stock") instead of raw count.
 
-  src/ReportingPlaceholder.jsx + /api/reports/**
-    Reporting is a stub; no low-stock report endpoint or UI (CAT-US10).
+  src/ReportingPlaceholder.jsx
+    Fetches GET /api/reports/low-stock on mount; displays a real-time
+    low-stock table with Product ID, Description, Current Stock, Min
+    Threshold, and Shortfall columns. Refresh button for on-demand
+    regeneration (CAT-US10).
+
+  src/App.jsx (CAT-US9)
+    Persistent low-stock warning banner for ADMIN users. Fetches
+    GET /api/reports/low-stock on load and after catalogue refreshes.
+    Shows count of affected products with expandable details table.
 
 
 ================================================================================
@@ -192,9 +215,8 @@ Frontend
   US6  Merchant Catalogue Browsing       DONE
   US7  Stock Delivery Recording          DONE
   US8  Minimum Stock Thresholds          DONE
-  US9  Automated Low-Stock Warnings      PARTIAL (table-level warning only;
-                                          no global banner on login)
-  US10 Low-Stock Reporting (RPRT)        NOT STARTED
+  US9  Automated Low-Stock Warnings      DONE
+  US10 Low-Stock Reporting (RPRT)        DONE
 
 
 ================================================================================
@@ -532,39 +554,36 @@ ACCEPTANCE CRITERION 1:
   "The system must automatically flag a product in the UI when Current
    Availability < Threshold."
 
-  STATUS: ⚠️  PARTIAL
+  STATUS: ✅  DONE
 
-  DONE:
-    • Catalogue.jsx admin/manager table: the "Min Stock" cell is rendered
-      in red with a ⚠ symbol when availabilityCount ≤ minStockThreshold.
-      This is visible immediately without any user action.
-
-  NOT DONE:
-    • No global banner (e.g. "3 products below minimum stock") shown on
-      the navigation bar or dashboard after login. The broader brief mentions
-      warnings "every time they use IPOS-SA" — a persistent banner is the
-      natural interpretation but has not been implemented.
+  IMPLEMENTED:
+    • Low-stock rule uses strict < (less-than) per the verbatim user-story
+      acceptance criterion. This applies to:
+        - Catalogue.jsx: admin/manager table Min Stock cell rendered in red
+          with ⚠ symbol when availabilityCount < minStockThreshold.
+        - App.jsx: persistent low-stock banner shown below the navigation
+          bar for ADMIN users on every page. Banner fetches
+          GET /api/reports/low-stock (shared endpoint with US10).
+        - ProductRepository.findLowStockProducts(): JPQL uses strict <
+          with COALESCE for null-safe stock comparison.
+    • Banner shows count of affected products and an expandable details
+      table listing each product.
 
 
 ACCEPTANCE CRITERION 2:
   "The warning must include the Product ID, Description and current stock
    level."
 
-  STATUS: ⚠️  PARTIAL
+  STATUS: ✅  DONE
 
-  DONE:
-    • The flagged table row shows Product ID (productCode), Description,
-      In Stock count, and Min Stock threshold in the same row — all
-      information is visible in context.
-
-  NOT DONE:
-    • There is no dedicated warning panel or tooltip that explicitly lists
-      only the low-stock fields (e.g. a summary list separate from the table).
-
-  WORK TO COMPLETE (if full compliance needed):
-    • Add a warning banner component that fetches products where
-      availabilityCount ≤ minStockThreshold and displays product code,
-      description, and current count — shown persistently for ADMIN users.
+  IMPLEMENTED:
+    • The low-stock banner (App.jsx) shows a summary count and an
+      expandable table with Product ID (productCode), Description,
+      and Current Stock for each affected product.
+    • The Catalogue.jsx table row also shows all three fields inline
+      with the red ⚠ warning indicator.
+    • LowStockProductDto carries id, productCode, description,
+      availabilityCount, and minStockThreshold.
 
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -579,37 +598,45 @@ ACCEPTANCE CRITERION 1:
   "The system must generate a report listing all products currently below
    their defined thresholds."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • Backend: GET /api/reports/low-stock returning products where
-      availabilityCount ≤ minStockThreshold and threshold is not null.
-    • Access: MANAGER and ADMIN (SecurityConfig already secures /api/reports/**).
+  IMPLEMENTED:
+    • GET /api/reports/low-stock returns products where
+      COALESCE(availabilityCount, 0) < minStockThreshold and
+      minStockThreshold IS NOT NULL. Uses strict < per US9.
+    • ProductRepository.findLowStockProducts() — @Query JPQL.
+    • ProductService.getLowStockProducts() — @Transactional(readOnly=true),
+      maps to LowStockProductDto (id, productCode, description,
+      availabilityCount, minStockThreshold).
+    • ReportController.java — @RestController @RequestMapping("/api/reports")
+      with @GetMapping("/low-stock").
 
 
 ACCEPTANCE CRITERION 2:
   "The report must reflect real-time catalogue data at the moment of
    generation."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  WORK TO COMPLETE:
-    • Simple read-only @Query in ProductRepository; no caching needed.
+  IMPLEMENTED:
+    • No caching. The JPQL query runs on every GET request against the
+      live database. The @Transactional(readOnly=true) annotation ensures
+      a consistent snapshot within the transaction.
 
 
 ACCEPTANCE CRITERION 3:
   "The report must be accessible through the IPOS-SA-RPRT package."
 
-  STATUS: ❌  NOT STARTED
+  STATUS: ✅  DONE
 
-  TODAY:
-    • frontend/src/ReportingPlaceholder.jsx is a stub.
-    • /api/reports/** is secured for MANAGER + ADMIN but no controller exists.
-
-  WORK TO COMPLETE:
-    • ReportController with GET /api/reports/low-stock.
-    • Add a "Low stock" section inside ReportingPlaceholder.jsx (or replace
-      it) that fetches the report and displays a table of at-risk products.
+  IMPLEMENTED:
+    • SecurityConfig.java: /api/reports/** → hasAnyRole("MANAGER","ADMIN").
+    • Frontend: ReportingPlaceholder.jsx (RPRT route) fetches
+      GET /api/reports/low-stock on mount and displays a table with
+      Product ID, Description, Current Stock, Min Threshold, and Shortfall.
+    • Refresh button allows on-demand regeneration without page reload.
+    • rbac.js: PACKAGE_RPRT grants MANAGER and ADMIN access; MERCHANT
+      cannot see the Reporting nav item.
 
 
 ================================================================================
@@ -618,7 +645,7 @@ ACCEPTANCE CRITERION 3:
 
   Tests live in: backend/src/test/java/com/ipos/cat/CatalogueCatTest.java
 
-  CatalogueCatTest (28 Mockito unit tests) covers:
+  CatalogueCatTest (31 Mockito unit tests) covers:
     • CAT-US2: createProduct — duplicate code 409, blank code 400, price
       normalization, all fields persisted including minStockThreshold
     • CAT-US3: deleteProduct — 404, 409 guard (order items exist), success
@@ -633,6 +660,8 @@ ACCEPTANCE CRITERION 3:
       null stock treated as 0 (null-safe)
     • CAT-US8: minStockThreshold persisted on create, null leaves null,
       persisted on update, null in update clears field
+    • CAT-US9/US10: getLowStockProducts — DTO mapping, empty when none
+      qualify, null availabilityCount treated as 0
 
   ProductControllerCatalogueCatWebMvcTest (15 WebMvc slice tests) covers:
     • CAT-US2: empty body → 400, valid body → 200
@@ -644,7 +673,11 @@ ACCEPTANCE CRITERION 3:
     • CAT-US7: valid delivery → 201, quantity=0 → 400, MERCHANT → 403,
       empty body → 400
 
-  No CAT-US1 or CAT-US9/US10 tests exist yet.
+  ReportControllerWebMvcTest (4 WebMvc slice tests) covers:
+    • CAT-US10: MANAGER → 200 with JSON list, ADMIN → 200, MERCHANT → 403,
+      unauthenticated → 401
+
+  No CAT-US1 tests exist yet.
 
 
 ================================================================================

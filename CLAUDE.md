@@ -52,17 +52,17 @@ Configure `backend/src/main/resources/application.properties` with your MySQL cr
 | Package | Code | Status |
 |---------|------|--------|
 | Account Management | IPOS-SA-ACC | ✅ Complete |
-| Catalogue & Inventory | IPOS-SA-CAT | ⚠️ Mostly Complete (US1 partial; US9/10 remain) |
+| Catalogue & Inventory | IPOS-SA-CAT | ⚠️ Mostly Complete (US1 partial) |
 | Orders & Fulfillment | IPOS-SA-ORD | ⚠️ Partial |
 | Merchant Profiles | IPOS-SA-MER | ✅ Complete |
-| Reporting | IPOS-SA-RPRT | ❌ Stub only |
+| Reporting | IPOS-SA-RPRT | ⚠️ Partial (low-stock report done; RPT-US1–5 remain) |
 
 ### Backend Layers (`backend/src/main/java/com/ipos/`)
 
 Standard Spring Boot layered architecture: **Controller → Service → Repository → Entity**. All business logic lives in services; controllers only parse HTTP and delegate.
 
 **Key Services:**
-- **`service/ProductService.java`** — Full catalogue CRUD: create (CAT-US2), update (CAT-US4), delete with audit log (CAT-US3), role-aware list (CAT-US6), multi-criteria search (CAT-US5), stock delivery recording with atomic availability increment (CAT-US7), min-stock threshold support (CAT-US8).
+- **`service/ProductService.java`** — Full catalogue CRUD: create (CAT-US2), update (CAT-US4), delete with audit log (CAT-US3), role-aware list (CAT-US6), multi-criteria search (CAT-US5), stock delivery recording with atomic availability increment (CAT-US7), min-stock threshold support (CAT-US8), low-stock query for report and banner (CAT-US9/US10).
 - **`service/OrderService.java`** — Most complex service. Handles the entire order pipeline atomically: standing check → stock validation + decrement → price snapshot → discount calc (FIXED or FLEXIBLE credit) → credit limit enforcement → save.
 - **`service/MerchantAccountService.java`** — Merchant creation (atomic User + MerchantProfile), flexible tier validation, month-close settlement with rebate calculation.
 - **`service/UserService.java`** — Staff user CRUD. Explicitly rejects `role=MERCHANT` (must use MerchantAccountService).
@@ -81,6 +81,7 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 - `MerchantProfile` — 1:1 with User. Holds contactEmail, contactPhone, addressLine, creditLimit, accountStatus (ACTIVE/INACTIVE), standing (NORMAL/IN_DEFAULT/SUSPENDED), discount plan (FIXED or FLEXIBLE), inDefaultSince, flexibleDiscountCredit, chequeRebatePending.
 - `Product` — id, productCode (unique business SKU), description, price (BigDecimal), availabilityCount, minStockThreshold (nullable Integer — CAT-US8, null = no threshold configured).
 - `StockDelivery` — id, product (ManyToOne), deliveryDate (LocalDate), quantityReceived, supplierReference (nullable, max 255), recordedBy (ManyToOne User), recordedAt (Instant). Table: `stock_deliveries`. CAT-US7 audit trail.
+- `LowStockProductDto` — read-only DTO for the low-stock report (CAT-US9/US10): id, productCode, description, availabilityCount (0 if null), minStockThreshold.
 - `CatalogueMetadata` — singleton row (id=1) recording when the catalogue was initialized (CAT-US1).
 - `Order` → M:1 User (merchant), 1:M OrderItem. Snapshots grossTotal, fixedDiscountAmount, flexibleCreditApplied, totalDue at placement.
 - `OrderItem` → M:1 Order, M:1 Product. Snapshots unitPriceAtOrder.
@@ -108,7 +109,7 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 | `/api/products/{id}` | PUT, DELETE | ADMIN |
 | `/api/products/{id}/deliveries` | POST | ADMIN (CAT-US7, also `@PreAuthorize`) |
 | `/api/orders` | GET, POST | Authenticated |
-| `/api/reports/**` | * | MANAGER, ADMIN (security rule exists, **no controller yet**) |
+| `/api/reports/low-stock` | GET | MANAGER, ADMIN (CAT-US10 real-time low-stock report) |
 
 ### Frontend Structure (`frontend/src/`)
 
@@ -130,7 +131,7 @@ No router library — uses simple `currentPage` state in App.jsx.
 **Route → Component mapping** (in `App.jsx`):
 - `catalogue` → `Catalogue.jsx` — product listing table with role-aware columns; ADMIN tools: init, create, edit (with minStockThreshold), delete (Yes/No modal), "+ Stock" delivery modal (CAT-US7); low-stock warning in table (CAT-US8/US9).
 - `order` → `OrderForm.jsx` — place orders with discount breakdown display; stock availability masked for MERCHANT.
-- `reporting` → `ReportingPlaceholder.jsx` — stub page for IPOS-SA-RPRT.
+- `reporting` → `ReportingPlaceholder.jsx` — low-stock report table (CAT-US10) + planned RPT-US1–5 stubs.
 - `accounts` → `MerchantCreate.jsx` — admin form for atomic merchant+profile creation.
 - `merchants` → `MerchantManagement.jsx` — edit profiles, standing transitions, month-close settlement.
 
@@ -144,6 +145,7 @@ No router library — uses simple `currentPage` state in App.jsx.
 | `updateProduct(id, product)` | PUT | `/api/products/{id}` |
 | `deleteProduct(id)` | DELETE | `/api/products/{id}` |
 | `recordDelivery(productId, {deliveryDate, quantityReceived, supplierReference})` | POST | `/api/products/{id}/deliveries` |
+| `getLowStockReport()` | GET | `/api/reports/low-stock` |
 | `getCatalogueStatus()` | GET | `/api/catalogue/status` |
 | `initializeCatalogue()` | POST | `/api/catalogue/initialize` |
 | `getUsers()` | GET | `/api/users` |
@@ -188,7 +190,10 @@ If the caller is a MERCHANT, `OrderService.placeOrder()` forces `merchantId` to 
 `POST /api/products/{id}/deliveries` is protected by both the URL-level security rule (`POST /api/products/**` → ADMIN) and a method-level `@PreAuthorize("hasRole('ADMIN')")` annotation (defence-in-depth). The service method is `@Transactional`: it increments `availabilityCount` and saves a `StockDelivery` audit record atomically. The response includes `newAvailabilityCount` so the frontend can update without an extra GET.
 
 ### Min Stock Threshold (CAT-US8)
-`minStockThreshold` is a nullable `Integer` on `Product`. `null` means no threshold is configured. The field is omitted from MERCHANT-facing responses via `@JsonInclude(NON_NULL)` on `CatalogueProductDto`. ADMIN/MANAGER see the value; the admin catalogue table highlights the cell in red when `availabilityCount ≤ minStockThreshold`.
+`minStockThreshold` is a nullable `Integer` on `Product`. `null` means no threshold is configured. The field is omitted from MERCHANT-facing responses via `@JsonInclude(NON_NULL)` on `CatalogueProductDto`. ADMIN/MANAGER see the value; the admin catalogue table highlights the cell in red when `availabilityCount < minStockThreshold` (strict less-than per US9 acceptance criterion).
+
+### Low-Stock Warnings & Report (CAT-US9/US10)
+A persistent low-stock warning banner is displayed below the navigation bar for ADMIN users on every page (`App.jsx`). It fetches `GET /api/reports/low-stock` (shared with the US10 report) and shows a count of affected products with an expandable details table including Product ID, Description, and Current Stock. The Reporting page (`ReportingPlaceholder.jsx`) displays the full low-stock report for MANAGER and ADMIN, with a Refresh button for on-demand regeneration. The backend uses `ProductRepository.findLowStockProducts()` with `COALESCE(availabilityCount, 0) < minStockThreshold` — no caching, real-time per US10 acceptance criteria.
 
 ### Adding a New Screen
 1. Create `NewFeature.jsx` in `frontend/src/`.
@@ -205,12 +210,13 @@ If the caller is a MERCHANT, `OrderService.placeOrder()` forces `merchantId` to 
 
 ## Tests
 
-63 tests total across 2 test classes. Test profile uses H2 in-memory DB with bootstrap disabled (`application-test.properties`).
+70 tests total across 3 test classes. Test profile uses H2 in-memory DB with bootstrap disabled (`application-test.properties`).
 
 | Test Class | Tests | Coverage |
 |------------|-------|---------|
-| `com/ipos/cat/CatalogueCatTest.java` | 28 Mockito unit tests | CAT-US2–US8: product CRUD, search, stock masking, delivery recording, threshold validation, audit logging |
+| `com/ipos/cat/CatalogueCatTest.java` | 31 Mockito unit tests | CAT-US2–US10: product CRUD, search, stock masking, delivery recording, threshold validation, audit logging, low-stock query |
 | `com/ipos/cat/ProductControllerCatalogueCatWebMvcTest.java` | 15 WebMvc slice tests | DTO validation (400), success paths (200/201/204), role enforcement (403), CAT-US5/US6/US7/US8 |
+| `com/ipos/cat/ReportControllerWebMvcTest.java` | 4 WebMvc slice tests | CAT-US10: MANAGER 200, ADMIN 200, MERCHANT 403, unauthenticated 401 |
 | `com/ipos/service/MerchantAccountServiceTest.java` | 20 Mockito unit tests | ACC-US1 merchant creation, tier validation, discount calculations, standing guards, credit limits, ORD-US1 merchant isolation |
 
 There are no frontend tests.
@@ -222,8 +228,8 @@ There are no frontend tests.
 Full status in `ACCprogress.txt` (ACC — complete) and `CATprogress.txt` (CAT).
 
 **CAT (Catalogue & Inventory):**
-- **CAT-US9**: Partial — low-stock warning shown inline in the admin catalogue table (stock ≤ threshold highlighted red with ⚠). No global dashboard banner yet.
-- **CAT-US10**: `ReportingPlaceholder.jsx` is a stub; no low-stock report endpoint or controller yet.
+- **CAT-US2–US10**: Complete. US9 persistent low-stock banner for ADMIN; US10 real-time low-stock report at `/api/reports/low-stock`.
+- **CAT-US1**: Partial — catalogue initialization endpoint exists but is not enforced as a prerequisite before adding products.
 
 **ORD (Orders):**
 - `GET /api/orders` returns all orders regardless of caller role — merchant-scoped listing not implemented.
@@ -246,4 +252,4 @@ Set `ipos.bootstrap.enabled=false` once real accounts exist.
 
 - `RBAC.md` — Full RBAC architecture and role/permission matrix
 - `ACCprogress.txt` — ACC epic user story status (all complete)
-- `CATprogress.txt` — CAT epic user story status (US2–US8 complete; US9 partial; US10 not started)
+- `CATprogress.txt` — CAT epic user story status (US2–US10 complete; US1 partial)

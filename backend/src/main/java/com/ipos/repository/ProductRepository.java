@@ -10,6 +10,12 @@
  * ║        The search() method combines optional filters with AND logic.        ║
  * ║        Null parameters are ignored (each IS NULL check short-circuits).     ║
  * ║                                                                              ║
+ * ║  LOW-STOCK QUERY (CAT-US9/US10):                                            ║
+ * ║        findLowStockProducts() returns products whose current stock is       ║
+ * ║        strictly below their configured threshold (< not ≤), matching the    ║
+ * ║        verbatim acceptance criterion in US9. Products without a threshold   ║
+ * ║        (minStockThreshold IS NULL) are excluded.                            ║
+ * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
  * ║        Add query methods by naming convention:                               ║
  * ║          - List<Product> findByAvailabilityCountGreaterThan(int min);        ║
@@ -49,4 +55,19 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
                          @Param("q") String q,
                          @Param("minPrice") BigDecimal minPrice,
                          @Param("maxPrice") BigDecimal maxPrice);
+
+    /**
+     * Returns products whose current stock is strictly below their configured
+     * minimum threshold (CAT-US9/US10). Uses strict {@code <} per the verbatim
+     * user-story acceptance criterion: "Current Availability < Threshold".
+     *
+     * <p>COALESCE handles legacy rows where availabilityCount may be null
+     * (treated as 0). Products without a threshold are excluded.
+     */
+    @Query("""
+        SELECT p FROM Product p
+         WHERE p.minStockThreshold IS NOT NULL
+           AND COALESCE(p.availabilityCount, 0) < p.minStockThreshold
+        """)
+    List<Product> findLowStockProducts();
 }

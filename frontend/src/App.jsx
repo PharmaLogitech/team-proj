@@ -8,6 +8,7 @@
  * ║          2. RBAC NAVIGATION — Only show nav items the user's role allows.  ║
  * ║          3. PAGE ROUTING — Render the correct page component based on       ║
  * ║             the current navigation state.                                   ║
+ * ║          4. LOW-STOCK BANNER — Persistent warning for ADMIN (CAT-US9).     ║
  * ║                                                                              ║
  * ║  AUTHENTICATION:                                                             ║
  * ║        Uses AuthContext (see auth/AuthContext.jsx).  The <AuthProvider>     ║
@@ -34,9 +35,10 @@
  * ║        - Add breadcrumbs or a sidebar layout for more complex navigation.  ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./auth/AuthContext.jsx";
 import { roleCanAccessRoute, getAccessibleRoutes } from "./auth/rbac.js";
+import { getLowStockReport } from "./api.js";
 import Login from "./Login.jsx";
 import Catalogue from "./Catalogue.jsx";
 import OrderForm from "./OrderForm.jsx";
@@ -90,6 +92,28 @@ function App() {
    */
   const [currentPage, setCurrentPage] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  /*
+   * ── Low-Stock Banner State (CAT-US9) ──────────────────────────────────
+   * Fetches low-stock products for ADMIN users so a persistent warning
+   * banner can be shown below the navigation on every page.
+   */
+  const [lowStockItems, setLowStockItems] = useState([]);
+  const [bannerExpanded, setBannerExpanded] = useState(false);
+
+  const fetchLowStock = useCallback(async () => {
+    if (!user || user.role !== "ADMIN") return;
+    try {
+      const data = await getLowStockReport();
+      setLowStockItems(data);
+    } catch {
+      /* Silently ignore — banner is supplementary. */
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchLowStock();
+  }, [fetchLowStock, refreshKey]);
 
   /*
    * ── Set Default Page When User Changes ─────────────────────────────────
@@ -197,6 +221,72 @@ function App() {
           ))}
         </nav>
       </header>
+
+      {/* ── Low-Stock Warning Banner (CAT-US9) ────────────────────────── */}
+      {user.role === "ADMIN" && lowStockItems.length > 0 && (
+        <div
+          style={{
+            background: "#fef2f2",
+            borderBottom: "2px solid #dc2626",
+            padding: "0.5rem 1.5rem",
+            fontSize: "0.9rem",
+            color: "#991b1b",
+          }}
+        >
+          <strong>⚠ Low-stock warning:</strong>{" "}
+          {lowStockItems.length} product{lowStockItems.length !== 1 ? "s" : ""}{" "}
+          below minimum threshold.
+          <button
+            type="button"
+            onClick={() => setBannerExpanded((prev) => !prev)}
+            style={{
+              marginLeft: "0.75rem",
+              fontSize: "0.8rem",
+              padding: "0.15rem 0.5rem",
+              cursor: "pointer",
+              background: "#fecaca",
+              border: "1px solid #f87171",
+              borderRadius: "4px",
+              color: "#991b1b",
+            }}
+          >
+            {bannerExpanded ? "Hide details" : "Show details"}
+          </button>
+
+          {bannerExpanded && (
+            <table
+              className="product-table"
+              style={{
+                marginTop: "0.5rem",
+                fontSize: "0.85rem",
+                background: "#fff",
+                width: "100%",
+              }}
+            >
+              <thead>
+                <tr>
+                  <th>Product ID</th>
+                  <th>Description</th>
+                  <th>Current Stock</th>
+                  <th>Threshold</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lowStockItems.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.productCode ?? "—"}</td>
+                    <td>{p.description}</td>
+                    <td style={{ color: "#dc2626", fontWeight: 600 }}>
+                      {p.availabilityCount}
+                    </td>
+                    <td>{p.minStockThreshold}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       <main className="app-main">
         {renderPage()}

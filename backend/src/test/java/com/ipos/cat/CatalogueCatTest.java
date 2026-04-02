@@ -1,6 +1,6 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Central CAT test source for IPOS-SA-CAT US1–US8.                    ║
+ * ║  WHAT: Central CAT test source for IPOS-SA-CAT US1–US10.                   ║
  * ║                                                                              ║
  * ║  WHY:  Keep catalogue behavior in one file for easier marking/review while   ║
  * ║        following the working style used by MerchantAccountServiceTest:       ║
@@ -18,20 +18,26 @@
  * ║       - CAT-US6 findAllForCatalogue (stock masking for merchants)            ║
  * ║       - CAT-US7 recordStockDelivery (increment, 404, null-safe stock)        ║
  * ║       - CAT-US8 minStockThreshold persisted on create/update                 ║
+ * ║       - CAT-US9/US10 getLowStockProducts (DTO mapping, empty, null stock)  ║
  * ║    2) ProductControllerCatalogueCatWebMvcTest (WebMvc slice):               ║
  * ║       - DTO validation and successful POST/PUT/DELETE/GET responses          ║
  * ║       - CAT-US5 GET /api/products/search WebMvc                             ║
  * ║       - CAT-US6 merchant stock masking via GET /api/products                ║
  * ║       - CAT-US7 POST /api/products/{id}/deliveries (201, 400, 403)          ║
  * ║       - CAT-US8 PUT with minStockThreshold -1 → 400                         ║
+ * ║    3) ReportControllerWebMvcTest (WebMvc slice):                            ║
+ * ║       - CAT-US10 GET /api/reports/low-stock MANAGER → 200                  ║
+ * ║       - CAT-US10 GET /api/reports/low-stock MERCHANT → 403                 ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.cat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ipos.controller.ProductController;
+import com.ipos.controller.ReportController;
 import com.ipos.dto.CatalogueProductDto;
 import com.ipos.dto.CreateProductRequest;
+import com.ipos.dto.LowStockProductDto;
 import com.ipos.dto.RecordStockDeliveryRequest;
 import com.ipos.dto.StockDeliveryResponse;
 import com.ipos.dto.UpdateProductRequest;
@@ -582,6 +588,52 @@ public class CatalogueCatTest {
 
         assertNull(result.getMinStockThreshold());
     }
+
+    // ── CAT-US9/US10: getLowStockProducts ────────────────────────────────────
+
+    @Test
+    @DisplayName("CAT-US10: getLowStockProducts returns DTOs for products below threshold")
+    void getLowStockProducts_returnsMappedDtos() {
+        Product p1 = sampleProduct(1L, "LOW1", "Paracetamol", "2.50", 3);
+        p1.setMinStockThreshold(10);
+        Product p2 = sampleProduct(2L, "LOW2", "Ibuprofen", "3.00", 0);
+        p2.setMinStockThreshold(5);
+
+        when(productRepository.findLowStockProducts()).thenReturn(List.of(p1, p2));
+
+        var result = productService.getLowStockProducts();
+
+        assertEquals(2, result.size());
+        assertEquals("LOW1", result.get(0).getProductCode());
+        assertEquals(3, result.get(0).getAvailabilityCount());
+        assertEquals(10, result.get(0).getMinStockThreshold());
+        assertEquals("LOW2", result.get(1).getProductCode());
+    }
+
+    @Test
+    @DisplayName("CAT-US10: getLowStockProducts returns empty list when no products below threshold")
+    void getLowStockProducts_emptyWhenNoneQualify() {
+        when(productRepository.findLowStockProducts()).thenReturn(List.of());
+
+        var result = productService.getLowStockProducts();
+
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    @DisplayName("CAT-US10: getLowStockProducts treats null availabilityCount as 0")
+    void getLowStockProducts_nullAvailabilityTreatedAsZero() {
+        Product p = sampleProduct(1L, "LEGACY", "OldDrug", "1.00", 0);
+        p.setAvailabilityCount(null);
+        p.setMinStockThreshold(5);
+
+        when(productRepository.findLowStockProducts()).thenReturn(List.of(p));
+
+        var result = productService.getLowStockProducts();
+
+        assertEquals(1, result.size());
+        assertEquals(0, result.get(0).getAvailabilityCount());
+    }
 }
 
 /*
@@ -852,5 +904,67 @@ class ProductControllerCatalogueCatWebMvcTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isOk());
+    }
+}
+
+/*
+ * WebMvc slice for ReportController — CAT-US10 low-stock report.
+ */
+@WebMvcTest(controllers = ReportController.class)
+@Import(SecurityConfig.class)
+@DisplayName("ReportController — WebMvc slice (CAT-US10)")
+@SuppressWarnings({"null", "unused"})
+class ReportControllerWebMvcTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
+    private ProductService productService;
+
+    // ── CAT-US10: GET /api/reports/low-stock ─────────────────────────────────
+
+    @Test
+    @DisplayName("GET /api/reports/low-stock as MANAGER → 200 with JSON list")
+    void lowStockReport_manager_returns200() throws Exception {
+        Product p = new Product("LOW1", "LowItem", new BigDecimal("5.00"), 2);
+        p.setId(1L);
+        p.setMinStockThreshold(10);
+
+        when(productService.getLowStockProducts())
+                .thenReturn(List.of(LowStockProductDto.fromProduct(p)));
+
+        mockMvc.perform(get("/api/reports/low-stock")
+                        .with(user("manager").roles("MANAGER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].productCode").value("LOW1"))
+                .andExpect(jsonPath("$[0].availabilityCount").value(2))
+                .andExpect(jsonPath("$[0].minStockThreshold").value(10));
+    }
+
+    @Test
+    @DisplayName("GET /api/reports/low-stock as ADMIN → 200")
+    void lowStockReport_admin_returns200() throws Exception {
+        when(productService.getLowStockProducts()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/reports/low-stock")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+    }
+
+    @Test
+    @DisplayName("GET /api/reports/low-stock as MERCHANT → 403 Forbidden")
+    void lowStockReport_merchant_returns403() throws Exception {
+        mockMvc.perform(get("/api/reports/low-stock")
+                        .with(user("merchant").roles("MERCHANT")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("GET /api/reports/low-stock unauthenticated → 401")
+    void lowStockReport_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/api/reports/low-stock"))
+                .andExpect(status().isUnauthorized());
     }
 }

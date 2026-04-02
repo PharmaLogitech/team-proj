@@ -191,6 +191,26 @@ export async function deleteProduct(id) {
   }
 }
 
+/* ── Reports (IPOS-SA-RPRT) ───────────────────────────────────────────────── */
+
+/**
+ * Fetch the low-stock report (CAT-US10).
+ * GET /api/reports/low-stock → returns JSON array of LowStockProductDto objects.
+ * Each row: { id, productCode, description, availabilityCount, minStockThreshold }.
+ *
+ * Real-time: the backend query runs on every call (no caching).
+ *
+ * ACCESS: MANAGER, ADMIN.
+ */
+export async function getLowStockReport() {
+  const response = await fetchWithAuth(`${API_BASE}/reports/low-stock`);
+  if (!response.ok) {
+    const body = await parseResponseBody(response);
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return response.json();
+}
+
 /* ── Catalogue (CAT-US1) ─────────────────────────────────────────────────── */
 
 /**

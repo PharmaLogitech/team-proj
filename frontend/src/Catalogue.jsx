@@ -4,7 +4,7 @@
  * ║        CAT-US2 admin create, CAT-US3 admin delete (Yes/No modal),           ║
  * ║        CAT-US4 admin edit, CAT-US5 multi-criteria search,                   ║
  * ║        CAT-US6 merchant stock masking, CAT-US7 stock delivery modal,        ║
- * ║        CAT-US8 min stock threshold with low-stock warning.                  ║
+ * ║        CAT-US8 min stock threshold, CAT-US9 low-stock warning (strict <).   ║
  * ║                                                                              ║
  * ║  WHY:  Single catalogue page for all roles. ADMIN sees admin tools (init,   ║
  * ║        create, edit, delete, + stock), full counts, min-stock thresholds,   ║
@@ -549,7 +549,7 @@ function Catalogue() {
                 {!isMerchant && (
                   <td>
                     {product.minStockThreshold != null ? (
-                      product.availabilityCount != null && product.availabilityCount <= product.minStockThreshold ? (
+                      product.availabilityCount != null && product.availabilityCount < product.minStockThreshold ? (
                         <span style={{ color: "#dc2626", fontWeight: 600 }}>
                           {product.minStockThreshold} &#9888;
                         </span>

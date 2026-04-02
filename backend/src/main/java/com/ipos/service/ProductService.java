@@ -3,8 +3,9 @@
  * ║  WHAT: Service class for Product-related business logic.                    ║
  * ║                                                                              ║
  * ║  WHY:  Validates catalogue creation rules (CAT-US2), handles product CRUD   ║
- * ║        (CAT-US3/US4), and provides role-aware search (CAT-US5) with stock   ║
- * ║        masking for merchants (CAT-US6).                                     ║
+ * ║        (CAT-US3/US4), provides role-aware search (CAT-US5) with stock       ║
+ * ║        masking for merchants (CAT-US6), and exposes a low-stock query       ║
+ * ║        for the report (CAT-US10) and admin warning banner (CAT-US9).        ║
  * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
  * ║        - Add inventory management: recordStockDelivery already done (US7).  ║
@@ -15,6 +16,7 @@ package com.ipos.service;
 
 import com.ipos.dto.CatalogueProductDto;
 import com.ipos.dto.CreateProductRequest;
+import com.ipos.dto.LowStockProductDto;
 import com.ipos.dto.RecordStockDeliveryRequest;
 import com.ipos.dto.StockDeliveryResponse;
 import com.ipos.dto.UpdateProductRequest;
@@ -70,6 +72,22 @@ public class ProductService {
     public List<CatalogueProductDto> findAllForCatalogue(boolean maskStock) {
         return productRepository.findAll().stream()
                 .map(p -> CatalogueProductDto.fromProduct(p, maskStock))
+                .toList();
+    }
+
+    /**
+     * Returns all products whose current stock is strictly below their
+     * configured minimum threshold (CAT-US9/US10).
+     *
+     * <p>Uses strict {@code <} per the verbatim user-story acceptance criterion:
+     * "Current Availability &lt; Threshold". Products without a threshold are excluded.
+     *
+     * <p>No caching — query runs on every call for real-time accuracy (US10 criterion 2).
+     */
+    @Transactional(readOnly = true)
+    public List<LowStockProductDto> getLowStockProducts() {
+        return productRepository.findLowStockProducts().stream()
+                .map(LowStockProductDto::fromProduct)
                 .toList();
     }
 

@@ -66,8 +66,8 @@ public class Product {
      *
      * Semantics:
      *   null  = no threshold configured for this product
-     *   0     = threshold at zero (flags only when stock hits 0)
-     *   N > 0 = flag when availabilityCount <= N
+     *   0     = threshold at zero (never flags — stock cannot be negative)
+     *   N > 0 = flag when availabilityCount < N (strict less-than per US9)
      *
      * Hibernate ddl-auto=update adds this nullable column without touching
      * existing rows; legacy rows will have null (= no threshold set).
