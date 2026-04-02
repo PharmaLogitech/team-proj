@@ -33,6 +33,14 @@ public class CatalogueProductDto {
 
     private String availabilityStatus;
 
+    /**
+     * Minimum stock threshold set by admin (CAT-US8).
+     * Omitted from JSON for MERCHANT role (operational data — administrator only).
+     * null means no threshold has been configured.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer minStockThreshold;
+
     public CatalogueProductDto() {
     }
 
@@ -50,15 +58,19 @@ public class CatalogueProductDto {
         dto.price = product.getPrice();
 
         if (maskStock) {
+            // MERCHANT: hide numeric stock count and min threshold (admin-only operational data)
             dto.availabilityCount = null;
             dto.availabilityStatus =
                     product.getAvailabilityCount() != null && product.getAvailabilityCount() > 0
                             ? "AVAILABLE" : "OUT_OF_STOCK";
+            dto.minStockThreshold = null;
         } else {
+            // ADMIN / MANAGER: full operational view
             dto.availabilityCount = product.getAvailabilityCount();
             dto.availabilityStatus =
                     product.getAvailabilityCount() != null && product.getAvailabilityCount() > 0
                             ? "AVAILABLE" : "OUT_OF_STOCK";
+            dto.minStockThreshold = product.getMinStockThreshold();
         }
 
         return dto;
@@ -88,5 +100,9 @@ public class CatalogueProductDto {
 
     public String getAvailabilityStatus() {
         return availabilityStatus;
+    }
+
+    public Integer getMinStockThreshold() {
+        return minStockThreshold;
     }
 }

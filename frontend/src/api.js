@@ -96,19 +96,24 @@ export async function searchProducts({ productCode, q, minPrice, maxPrice } = {}
 
 /**
  * Create a new product.
- * POST /api/products with a JSON body (CAT-US2).
+ * POST /api/products with a JSON body (CAT-US2, CAT-US8).
  *
  * ACCESS: ADMIN only.
  */
 export async function createProduct(product) {
+  const payload = {
+    productCode: product.productCode,
+    description: product.description,
+    price: product.price,
+    availabilityCount: product.availabilityCount,
+  };
+  // CAT-US8: only send minStockThreshold when provided (null = no threshold)
+  if (product.minStockThreshold != null && product.minStockThreshold !== "") {
+    payload.minStockThreshold = Number(product.minStockThreshold);
+  }
   const response = await fetchWithAuth(`${API_BASE}/products`, {
     method: "POST",
-    body: JSON.stringify({
-      productCode: product.productCode,
-      description: product.description,
-      price: product.price,
-      availabilityCount: product.availabilityCount,
-    }),
+    body: JSON.stringify(payload),
   });
   const body = await parseResponseBody(response);
   if (!response.ok) {
@@ -118,19 +123,50 @@ export async function createProduct(product) {
 }
 
 /**
- * Update an existing product (CAT-US4).
- * PUT /api/products/{id} with description, price, availabilityCount.
+ * Update an existing product (CAT-US4, CAT-US8).
+ * PUT /api/products/{id} with description, price, availabilityCount, minStockThreshold.
+ * Pass minStockThreshold=null to clear an existing threshold.
  *
  * ACCESS: ADMIN only.
  */
 export async function updateProduct(id, product) {
+  const payload = {
+    description: product.description,
+    price: product.price,
+    availabilityCount: product.availabilityCount,
+    // CAT-US8: null explicitly clears the threshold; number sets it.
+    minStockThreshold:
+      product.minStockThreshold != null && product.minStockThreshold !== ""
+        ? Number(product.minStockThreshold)
+        : null,
+  };
   const response = await fetchWithAuth(`${API_BASE}/products/${id}`, {
     method: "PUT",
-    body: JSON.stringify({
-      description: product.description,
-      price: product.price,
-      availabilityCount: product.availabilityCount,
-    }),
+    body: JSON.stringify(payload),
+  });
+  const body = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
+}
+
+/**
+ * Record a stock delivery for a product (CAT-US7).
+ * POST /api/products/{productId}/deliveries with deliveryDate, quantityReceived,
+ * and optional supplierReference.
+ * Returns a StockDeliveryResponse including the updated stock count.
+ *
+ * ACCESS: ADMIN only.
+ */
+export async function recordDelivery(productId, { deliveryDate, quantityReceived, supplierReference } = {}) {
+  const payload = { deliveryDate, quantityReceived };
+  if (supplierReference && supplierReference.trim()) {
+    payload.supplierReference = supplierReference.trim();
+  }
+  const response = await fetchWithAuth(`${API_BASE}/products/${productId}/deliveries`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
   const body = await parseResponseBody(response);
   if (!response.ok) {

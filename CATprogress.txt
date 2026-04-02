@@ -2,7 +2,7 @@
  IPOS-SA-CAT — Electronic Catalogue and Inventory Control — Progress Report
 ================================================================================
 
-Generated     : 2026-03-21
+Generated     : 2026-04-02
 Epic          : Electronic Catalogue and Inventory Control
 Companion doc : ACCprogress.txt (same directory — Account Management)
 
@@ -20,15 +20,11 @@ Goal (from your epic description):
   levels, and monitors inventory thresholds so products remain available.
 
 Current state (high level):
-  • A minimal "products" catalogue exists in the database with description,
-    unit price, and availability count.
-  • Any authenticated user can list products (GET).  Only ADMIN may POST
-    new products (per Spring Security).  Stock is decremented when orders
-    are placed (ORD integration).
-  • Most CAT-specific user stories are NOT YET implemented: there is no
-    admin UI for catalogue CRUD, no search API, no delete/update endpoints,
-    no delivery recording, no minimum stock / low-stock warnings or reports,
-    and the merchant view still exposes raw stock counts.
+  • Full product CRUD implemented: create (US2), update (US4), delete with
+    audit log (US3), multi-criteria search (US5), merchant stock masking (US6),
+    stock delivery recording (US7), and minimum stock thresholds (US8).
+  • Remaining: automated low-stock warnings (US9, partial — UI warning shown
+    in admin table when stock ≤ threshold) and low-stock reporting (US10).
 
 Estimated completion for CAT epic (prototype):  Most stories require new
 backend endpoints, entity fields, validation, audit/logging, and frontend
@@ -101,14 +97,14 @@ Frontend
 ================================================================================
 
   US1  Catalogue Initialization          PARTIAL (implicit schema only)
-  US2  Product Creation                  PARTIAL (API only; weak validation)
+  US2  Product Creation                  DONE
   US3  Product Discontinuation/Removal   DONE
   US4  Product Data Maintenance          DONE
   US5  Internal Product Search           DONE
   US6  Merchant Catalogue Browsing       DONE
-  US7  Stock Delivery Recording          NOT STARTED
-  US8  Minimum Stock Thresholds          NOT STARTED
-  US9  Automated Low-Stock Warnings      NOT STARTED
+  US7  Stock Delivery Recording          DONE
+  US8  Minimum Stock Thresholds          DONE
+  US9  Automated Low-Stock Warnings      PARTIAL (UI warning in admin table)
   US10 Low-Stock Reporting (RPRT)        NOT STARTED
 
 

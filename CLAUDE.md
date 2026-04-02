@@ -51,7 +51,7 @@ Configure `backend/src/main/resources/application.properties` with your MySQL cr
 | Package | Code | Status |
 |---------|------|--------|
 | Account Management | IPOS-SA-ACC | ✅ Complete |
-| Catalogue & Inventory | IPOS-SA-CAT | ⚠️ Partial |
+| Catalogue & Inventory | IPOS-SA-CAT | ⚠️ Mostly Complete (US1, US9/10 remain) |
 | Orders & Fulfillment | IPOS-SA-ORD | ⚠️ Partial |
 | Merchant Profiles | IPOS-SA-MER | ✅ Complete |
 | Reporting | IPOS-SA-RPRT | ❌ Stub only |
@@ -75,7 +75,8 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 **Entities & Relationships:**
 - `User` — id, name, username, passwordHash, role (ADMIN/MANAGER/MERCHANT). Optional 1:1 with MerchantProfile.
 - `MerchantProfile` — 1:1 with User. Holds contactEmail, contactPhone, addressLine, creditLimit, accountStatus (ACTIVE/INACTIVE), standing (NORMAL/IN_DEFAULT/SUSPENDED), discount plan (FIXED or FLEXIBLE), inDefaultSince, flexibleDiscountCredit, chequeRebatePending.
-- `Product` — id, description, price, availabilityCount. No SKU/business ID yet.
+- `Product` — id, productCode (unique business SKU), description, price, availabilityCount, minStockThreshold (nullable, CAT-US8).
+- `StockDelivery` — id, product (ManyToOne), deliveryDate (LocalDate), quantityReceived, supplierReference (nullable), recordedBy (User), recordedAt (Instant). Table: `stock_deliveries` (CAT-US7).
 - `Order` → M:1 User (merchant), 1:M OrderItem. Snapshots grossTotal, fixedDiscountAmount, flexibleCreditApplied, totalDue at placement.
 - `OrderItem` → M:1 Order, M:1 Product. Snapshots unitPriceAtOrder.
 - `MonthlyRebateSettlement` — M:1 User. Records month-close rebate calculations. Unique constraint on (merchant_id, settlement_year_month).
@@ -93,7 +94,9 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 | `/api/merchant-profiles/close-month` | POST | MANAGER, ADMIN |
 | `/api/products` | GET | Authenticated |
 | `/api/products` | POST | ADMIN |
-| `/api/products` | PUT, DELETE | ADMIN (security rules exist, **controller methods not yet implemented**) |
+| `/api/products/{id}` | PUT, DELETE | ADMIN |
+| `/api/products/{id}/deliveries` | POST | ADMIN (CAT-US7 stock delivery) |
+| `/api/products/search` | GET | Authenticated (CAT-US5/US6) |
 | `/api/orders` | GET, POST | Authenticated |
 | `/api/reports` | * | MANAGER, ADMIN (security rules exist, **no controller yet**) |
 
@@ -176,12 +179,9 @@ There are no frontend tests, no `ProductController` tests, and no `WebMvc` integ
 Detailed status in `ACCprogress.txt` (ACC — complete) and `CATprogress.txt` (CAT — largely incomplete). Key remaining gaps:
 
 **CAT (Catalogue & Inventory):**
-- **CAT-US2**: `POST /api/products` exists but has weak validation (no DTO, no unique SKU field).
-- **CAT-US3/US4**: No `PUT`/`DELETE` on `ProductController` (security rules exist, controller methods don't).
-- **CAT-US5/US6**: No product search endpoint; merchants see raw stock counts (should show Available/Out of Stock only).
-- **CAT-US7**: No stock delivery recording (`StockDelivery` entity doesn't exist).
-- **CAT-US8/US9**: No `minStockThreshold` field on `Product`; no low-stock warnings.
-- **CAT-US10**: `ReportingPlaceholder.jsx` is a stub; no report controllers.
+- **CAT-US2/US3/US4/US5/US6/US7/US8**: All implemented. Full CRUD, search, merchant masking, stock delivery recording, min stock thresholds with UI low-stock warning in admin table.
+- **CAT-US9**: Partial — low-stock warning shown inline in admin catalogue table (stock ≤ threshold highlighted in red). No global dashboard banner yet.
+- **CAT-US10**: `ReportingPlaceholder.jsx` is a stub; no low-stock report controller yet.
 
 **ORD (Orders):**
 - `GET /api/orders` returns all orders regardless of role — merchant-scoped listing not implemented.

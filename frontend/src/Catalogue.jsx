@@ -3,12 +3,13 @@
  * ║  WHAT: Product catalogue — list, search, CAT-US1 initialize,                ║
  * ║        CAT-US2 admin create, CAT-US3 admin delete (Yes/No modal),           ║
  * ║        CAT-US4 admin edit, CAT-US5 multi-criteria search,                   ║
- * ║        CAT-US6 merchant stock masking.                                      ║
+ * ║        CAT-US6 merchant stock masking, CAT-US7 stock delivery modal,        ║
+ * ║        CAT-US8 min stock threshold with low-stock warning.                  ║
  * ║                                                                              ║
  * ║  WHY:  Single catalogue page for all roles. ADMIN sees admin tools (init,   ║
- * ║        create, edit, delete) and full stock counts. MERCHANT sees read-only  ║
- * ║        table with Available/Out of Stock labels instead of numeric counts.   ║
- * ║        All roles can search by Product ID, description, and price range.     ║
+ * ║        create, edit, delete, + stock), full counts, min-stock thresholds,   ║
+ * ║        and low-stock warnings. MERCHANT sees read-only table with           ║
+ * ║        Available/Out of Stock labels. All roles can search.                 ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 import { useState, useEffect, useCallback } from "react";
@@ -20,6 +21,7 @@ import {
   deleteProduct,
   getCatalogueStatus,
   initializeCatalogue,
+  recordDelivery,
 } from "./api.js";
 import { useAuth } from "./auth/AuthContext.jsx";
 
@@ -52,13 +54,19 @@ function Catalogue() {
     description: "",
     price: "",
     availabilityCount: "0",
+    minStockThreshold: "",   // CAT-US8: optional, blank = no threshold
   });
   const [createBusy, setCreateBusy] = useState(false);
   const [createMessage, setCreateMessage] = useState(null);
 
   // CAT-US4: Edit state
   const [editingProduct, setEditingProduct] = useState(null);
-  const [editForm, setEditForm] = useState({ description: "", price: "", availabilityCount: "" });
+  const [editForm, setEditForm] = useState({
+    description: "",
+    price: "",
+    availabilityCount: "",
+    minStockThreshold: "",   // CAT-US8: blank = clear threshold
+  });
   const [editBusy, setEditBusy] = useState(false);
   const [editMessage, setEditMessage] = useState(null);
 
@@ -66,6 +74,16 @@ function Catalogue() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState(null);
+
+  // CAT-US7: Record delivery modal state
+  const [deliveryTarget, setDeliveryTarget] = useState(null);
+  const [deliveryForm, setDeliveryForm] = useState({
+    deliveryDate: "",
+    quantityReceived: "1",
+    supplierReference: "",
+  });
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [deliveryMessage, setDeliveryMessage] = useState(null);
 
   // CAT-US5/US6: Search state
   const [searchForm, setSearchForm] = useState({
@@ -128,12 +146,14 @@ function Catalogue() {
         description: form.description.trim(),
         price: priceNum,
         availabilityCount: availNum,
+        minStockThreshold: form.minStockThreshold !== "" ? form.minStockThreshold : null,
       });
       setForm({
         productCode: "",
         description: "",
         price: "",
         availabilityCount: "0",
+        minStockThreshold: "",
       });
       setCreateMessage("Product created.");
       await loadProducts();
@@ -155,6 +175,7 @@ function Catalogue() {
       description: product.description || "",
       price: product.price != null ? String(product.price) : "",
       availabilityCount: product.availabilityCount != null ? String(product.availabilityCount) : "0",
+      minStockThreshold: product.minStockThreshold != null ? String(product.minStockThreshold) : "",
     });
     setEditMessage(null);
   };
@@ -173,6 +194,7 @@ function Catalogue() {
         description: editForm.description.trim(),
         price: Number(editForm.price),
         availabilityCount: parseInt(editForm.availabilityCount, 10),
+        minStockThreshold: editForm.minStockThreshold !== "" ? editForm.minStockThreshold : null,
       });
       setEditingProduct(null);
       setEditMessage(null);
@@ -206,6 +228,37 @@ function Catalogue() {
       setDeleteMessage(err.message);
     } finally {
       setDeleteBusy(false);
+    }
+  };
+
+  // CAT-US7: Open delivery modal for a product
+  const startDelivery = (product) => {
+    setDeliveryTarget(product);
+    setDeliveryForm({ deliveryDate: "", quantityReceived: "1", supplierReference: "" });
+    setDeliveryMessage(null);
+  };
+
+  const cancelDelivery = () => {
+    setDeliveryTarget(null);
+    setDeliveryMessage(null);
+  };
+
+  const handleRecordDelivery = async (e) => {
+    e.preventDefault();
+    setDeliveryBusy(true);
+    setDeliveryMessage(null);
+    try {
+      const resp = await recordDelivery(deliveryTarget.id, {
+        deliveryDate: deliveryForm.deliveryDate,
+        quantityReceived: parseInt(deliveryForm.quantityReceived, 10),
+        supplierReference: deliveryForm.supplierReference || undefined,
+      });
+      setDeliveryMessage(`Delivery recorded. New stock: ${resp.newAvailabilityCount}`);
+      await loadProducts();
+    } catch (err) {
+      setDeliveryMessage(err.message);
+    } finally {
+      setDeliveryBusy(false);
     }
   };
 
@@ -347,6 +400,17 @@ function Catalogue() {
                   required
                 />
               </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="minStockThreshold">Min stock (opt.)</label>
+                <input
+                  id="minStockThreshold"
+                  type="number"
+                  min="0"
+                  placeholder="No threshold"
+                  value={form.minStockThreshold}
+                  onChange={(e) => setForm((f) => ({ ...f, minStockThreshold: e.target.value }))}
+                />
+              </div>
               <button type="submit" className="submit-btn" disabled={createBusy}>
                 {createBusy ? "Saving..." : "Add product"}
               </button>
@@ -471,6 +535,7 @@ function Catalogue() {
               <th>Description</th>
               <th>Price</th>
               <th>{isMerchant ? "Availability" : "In Stock"}</th>
+              {!isMerchant && <th>Min Stock</th>}
               {isAdmin && <th>Actions</th>}
             </tr>
           </thead>
@@ -481,12 +546,27 @@ function Catalogue() {
                 <td>{product.description}</td>
                 <td>&pound;{Number(product.price).toFixed(2)}</td>
                 <td>{formatAvailability(product, user?.role)}</td>
-                {isAdmin && (
+                {!isMerchant && (
                   <td>
+                    {product.minStockThreshold != null ? (
+                      product.availabilityCount != null && product.availabilityCount <= product.minStockThreshold ? (
+                        <span style={{ color: "#dc2626", fontWeight: 600 }}>
+                          {product.minStockThreshold} &#9888;
+                        </span>
+                      ) : (
+                        product.minStockThreshold
+                      )
+                    ) : (
+                      <span style={{ color: "#94a3b8" }}>&mdash;</span>
+                    )}
+                  </td>
+                )}
+                {isAdmin && (
+                  <td style={{ whiteSpace: "nowrap" }}>
                     <button
                       type="button"
                       className="submit-btn"
-                      style={{ marginRight: "0.5rem", padding: "0.25rem 0.75rem", fontSize: "0.85rem" }}
+                      style={{ marginRight: "0.4rem", padding: "0.25rem 0.6rem", fontSize: "0.8rem" }}
                       onClick={() => startEdit(product)}
                     >
                       Edit
@@ -494,7 +574,15 @@ function Catalogue() {
                     <button
                       type="button"
                       className="submit-btn"
-                      style={{ padding: "0.25rem 0.75rem", fontSize: "0.85rem", background: "#dc2626" }}
+                      style={{ marginRight: "0.4rem", padding: "0.25rem 0.6rem", fontSize: "0.8rem", background: "#0891b2" }}
+                      onClick={() => startDelivery(product)}
+                    >
+                      + Stock
+                    </button>
+                    <button
+                      type="button"
+                      className="submit-btn"
+                      style={{ padding: "0.25rem 0.6rem", fontSize: "0.8rem", background: "#dc2626" }}
                       onClick={() => confirmDelete(product)}
                     >
                       Delete
@@ -571,6 +659,17 @@ function Catalogue() {
                   required
                 />
               </div>
+              <div className="form-group">
+                <label htmlFor="edit-minStockThreshold">Min stock threshold (opt.)</label>
+                <input
+                  id="edit-minStockThreshold"
+                  type="number"
+                  min="0"
+                  placeholder="Leave blank to remove"
+                  value={editForm.minStockThreshold}
+                  onChange={(e) => setEditForm((f) => ({ ...f, minStockThreshold: e.target.value }))}
+                />
+              </div>
               {editMessage && (
                 <p className="status-message error" style={{ marginBottom: "0.75rem" }}>
                   {editMessage}
@@ -582,6 +681,97 @@ function Catalogue() {
                 </button>
                 <button type="submit" className="submit-btn" disabled={editBusy}>
                   {editBusy ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CAT-US7: Record stock delivery modal */}
+      {deliveryTarget && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={cancelDelivery}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "8px",
+              padding: "1.5rem",
+              minWidth: "340px",
+              maxWidth: "480px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0 }}>
+              Record Delivery: {deliveryTarget.productCode ?? deliveryTarget.id}
+            </h3>
+            <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: "1rem" }}>
+              Current stock: {deliveryTarget.availabilityCount ?? 0}
+            </p>
+            <form onSubmit={handleRecordDelivery}>
+              <div className="form-group">
+                <label htmlFor="delivery-date">Delivery date</label>
+                <input
+                  id="delivery-date"
+                  type="date"
+                  value={deliveryForm.deliveryDate}
+                  onChange={(e) => setDeliveryForm((f) => ({ ...f, deliveryDate: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="delivery-qty">Quantity received</label>
+                <input
+                  id="delivery-qty"
+                  type="number"
+                  min="1"
+                  value={deliveryForm.quantityReceived}
+                  onChange={(e) => setDeliveryForm((f) => ({ ...f, quantityReceived: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="delivery-ref">Supplier reference (opt.)</label>
+                <input
+                  id="delivery-ref"
+                  value={deliveryForm.supplierReference}
+                  onChange={(e) => setDeliveryForm((f) => ({ ...f, supplierReference: e.target.value }))}
+                  placeholder="e.g. PO-20260401"
+                />
+              </div>
+              {deliveryMessage && (
+                <p
+                  className={`status-message ${deliveryMessage.startsWith("Delivery recorded") ? "success" : "error"}`}
+                  style={{ marginBottom: "0.75rem" }}
+                >
+                  {deliveryMessage}
+                </p>
+              )}
+              <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="submit-btn"
+                  style={{ background: "#64748b" }}
+                  onClick={cancelDelivery}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="submit-btn" disabled={deliveryBusy}>
+                  {deliveryBusy ? "Recording..." : "Record delivery"}
                 </button>
               </div>
             </form>

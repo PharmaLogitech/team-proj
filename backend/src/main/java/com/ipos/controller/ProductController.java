@@ -14,17 +14,20 @@
  * ║        - DELETE /api/products/** → ADMIN only (CAT-US3 discontinuation).  ║
  * ║                                                                              ║
  * ║  ENDPOINTS:                                                                   ║
- * ║        GET    /api/products         → list all (role-aware DTO)             ║
- * ║        GET    /api/products/search  → combined search (CAT-US5/US6)        ║
- * ║        POST   /api/products         → create (CAT-US2)                     ║
- * ║        PUT    /api/products/{id}    → update (CAT-US4)                     ║
- * ║        DELETE /api/products/{id}    → remove (CAT-US3)                     ║
+ * ║        GET    /api/products                    → list all (role-aware DTO)  ║
+ * ║        GET    /api/products/search             → combined search (CAT-US5/6)║
+ * ║        POST   /api/products                    → create (CAT-US2)           ║
+ * ║        PUT    /api/products/{id}               → update (CAT-US4/US8)       ║
+ * ║        DELETE /api/products/{id}               → remove (CAT-US3)           ║
+ * ║        POST   /api/products/{id}/deliveries    → record delivery (CAT-US7)  ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.controller;
 
 import com.ipos.dto.CatalogueProductDto;
 import com.ipos.dto.CreateProductRequest;
+import com.ipos.dto.RecordStockDeliveryRequest;
+import com.ipos.dto.StockDeliveryResponse;
 import com.ipos.dto.UpdateProductRequest;
 import com.ipos.entity.Product;
 import com.ipos.entity.User;
@@ -33,6 +36,7 @@ import com.ipos.service.ProductService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -107,6 +111,24 @@ public class ProductController {
                         "Authenticated user not found in database"));
         productService.deleteProduct(id, deletedBy);
         return ResponseEntity.noContent().build();
+    }
+
+    /*
+     * POST /api/products/{productId}/deliveries → Records a stock delivery and
+     * increments product availability atomically (CAT-US7).
+     * URL-level rule (POST /api/products/**) + method-level guard both enforce ADMIN only.
+     */
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/{productId}/deliveries")
+    public ResponseEntity<StockDeliveryResponse> recordDelivery(
+            @PathVariable Long productId,
+            @Valid @RequestBody RecordStockDeliveryRequest request,
+            Authentication authentication) {
+        User recordedBy = userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Authenticated user not found in database"));
+        StockDeliveryResponse response = productService.recordStockDelivery(productId, request, recordedBy);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

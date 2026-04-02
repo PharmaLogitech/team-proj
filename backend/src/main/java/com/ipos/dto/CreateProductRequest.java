@@ -7,8 +7,9 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 
 /**
- * Request body for creating a catalogue product (CAT-US2).
+ * Request body for creating a catalogue product (CAT-US2, CAT-US8).
  * Product codes are normalized to uppercase in the service layer for case-insensitive uniqueness.
+ * minStockThreshold is optional (null = no threshold configured for this product).
  */
 public class CreateProductRequest {
 
@@ -25,6 +26,10 @@ public class CreateProductRequest {
     @NotNull(message = "Availability is required")
     @Min(value = 0, message = "Availability must not be negative")
     private Integer availabilityCount;
+
+    /** Optional minimum stock threshold (CAT-US8). null = no threshold. Must be ≥ 0 when provided. */
+    @Min(value = 0, message = "Minimum stock threshold must not be negative")
+    private Integer minStockThreshold;
 
     public String getProductCode() {
         return productCode;
@@ -56,5 +61,13 @@ public class CreateProductRequest {
 
     public void setAvailabilityCount(Integer availabilityCount) {
         this.availabilityCount = availabilityCount;
+    }
+
+    public Integer getMinStockThreshold() {
+        return minStockThreshold;
+    }
+
+    public void setMinStockThreshold(Integer minStockThreshold) {
+        this.minStockThreshold = minStockThreshold;
     }
 }

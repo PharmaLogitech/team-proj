@@ -7,8 +7,9 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 
 /**
- * Request body for updating a catalogue product (CAT-US4).
+ * Request body for updating a catalogue product (CAT-US4, CAT-US8).
  * No productCode field — the Product ID is immutable per acceptance criteria.
+ * minStockThreshold is optional (null clears any existing threshold).
  */
 public class UpdateProductRequest {
 
@@ -22,6 +23,10 @@ public class UpdateProductRequest {
     @NotNull(message = "Availability is required")
     @Min(value = 0, message = "Availability must not be negative")
     private Integer availabilityCount;
+
+    /** Optional minimum stock threshold (CAT-US8). null clears threshold. Must be ≥ 0 when provided. */
+    @Min(value = 0, message = "Minimum stock threshold must not be negative")
+    private Integer minStockThreshold;
 
     public String getDescription() {
         return description;
@@ -45,5 +50,13 @@ public class UpdateProductRequest {
 
     public void setAvailabilityCount(Integer availabilityCount) {
         this.availabilityCount = availabilityCount;
+    }
+
+    public Integer getMinStockThreshold() {
+        return minStockThreshold;
+    }
+
+    public void setMinStockThreshold(Integer minStockThreshold) {
+        this.minStockThreshold = minStockThreshold;
     }
 }

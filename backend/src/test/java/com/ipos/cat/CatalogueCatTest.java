@@ -1,6 +1,6 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Central CAT test source for IPOS-SA-CAT US1–US6.                    ║
+ * ║  WHAT: Central CAT test source for IPOS-SA-CAT US1–US8.                    ║
  * ║                                                                              ║
  * ║  WHY:  Keep catalogue behavior in one file for easier marking/review while   ║
  * ║        following the working style used by MerchantAccountServiceTest:       ║
@@ -16,10 +16,14 @@
  * ║       - CAT-US4 product update (immutable productCode, 404)                  ║
  * ║       - CAT-US5 searchProducts (AND logic, price validation)                 ║
  * ║       - CAT-US6 findAllForCatalogue (stock masking for merchants)            ║
+ * ║       - CAT-US7 recordStockDelivery (increment, 404, null-safe stock)        ║
+ * ║       - CAT-US8 minStockThreshold persisted on create/update                 ║
  * ║    2) ProductControllerCatalogueCatWebMvcTest (WebMvc slice):               ║
  * ║       - DTO validation and successful POST/PUT/DELETE/GET responses          ║
  * ║       - CAT-US5 GET /api/products/search WebMvc                             ║
  * ║       - CAT-US6 merchant stock masking via GET /api/products                ║
+ * ║       - CAT-US7 POST /api/products/{id}/deliveries (201, 400, 403)          ║
+ * ║       - CAT-US8 PUT with minStockThreshold -1 → 400                         ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.cat;
@@ -28,16 +32,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ipos.controller.ProductController;
 import com.ipos.dto.CatalogueProductDto;
 import com.ipos.dto.CreateProductRequest;
+import com.ipos.dto.RecordStockDeliveryRequest;
+import com.ipos.dto.StockDeliveryResponse;
 import com.ipos.dto.UpdateProductRequest;
 import com.ipos.entity.CatalogueMetadata;
 import com.ipos.entity.Product;
 import com.ipos.entity.ProductDeletionLog;
+import com.ipos.entity.StockDelivery;
 import com.ipos.entity.User;
 import com.ipos.repository.CatalogueMetadataRepository;
 import com.ipos.repository.OrderItemRepository;
 import com.ipos.repository.ProductDeletionLogRepository;
 import com.ipos.repository.ProductRepository;
+import com.ipos.repository.StockDeliveryRepository;
 import com.ipos.repository.UserRepository;
+import com.ipos.security.SecurityConfig;
 import com.ipos.service.CatalogueService;
 import com.ipos.service.ProductService;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,12 +59,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -98,6 +111,9 @@ public class CatalogueCatTest {
     @Mock
     private ProductDeletionLogRepository productDeletionLogRepository;
 
+    @Mock
+    private StockDeliveryRepository stockDeliveryRepository;
+
     private CatalogueService catalogueService;
     private ProductService productService;
 
@@ -106,7 +122,8 @@ public class CatalogueCatTest {
         catalogueService = new CatalogueService(catalogueMetadataRepository);
         productService = new ProductService(
                 productRepository, catalogueServiceMock,
-                orderItemRepository, productDeletionLogRepository);
+                orderItemRepository, productDeletionLogRepository,
+                stockDeliveryRepository);
     }
 
     private static CreateProductRequest newCreateRequest(String code, String desc, String price, int avail) {
@@ -432,15 +449,154 @@ public class CatalogueCatTest {
         assertNull(results.get(0).getAvailabilityCount());
         assertEquals("AVAILABLE", results.get(0).getAvailabilityStatus());
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  CAT-US7: ProductService#recordStockDelivery rules
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("CAT-US7: recordStockDelivery returns 404 when product not found")
+    void recordDelivery_notFound_404() {
+        when(productRepository.findById(999L)).thenReturn(Optional.empty());
+
+        RecordStockDeliveryRequest req = new RecordStockDeliveryRequest();
+        req.setDeliveryDate(LocalDate.of(2026, 4, 1));
+        req.setQuantityReceived(10);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> productService.recordStockDelivery(999L, req, sampleAdmin()));
+        assertEquals(404, ex.getStatusCode().value());
+        verify(stockDeliveryRepository, never()).save(any());
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("CAT-US7: recordStockDelivery increments availabilityCount atomically")
+    void recordDelivery_success_incrementsCount() {
+        Product product = sampleProduct(1L, "PARA", "Paracetamol", "3.50", 20);
+        User admin = sampleAdmin();
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(stockDeliveryRepository.save(any(StockDelivery.class)))
+                .thenAnswer(inv -> {
+                    StockDelivery d = inv.getArgument(0);
+                    d.setId(1L);
+                    return d;
+                });
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RecordStockDeliveryRequest req = new RecordStockDeliveryRequest();
+        req.setDeliveryDate(LocalDate.of(2026, 4, 1));
+        req.setQuantityReceived(30);
+        req.setSupplierReference("PO-12345");
+
+        StockDeliveryResponse response = productService.recordStockDelivery(1L, req, admin);
+
+        assertEquals(50, response.getNewAvailabilityCount());
+        assertEquals(30, response.getQuantityReceived());
+        assertEquals("PO-12345", response.getSupplierReference());
+
+        ArgumentCaptor<Product> productCap = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository).save(productCap.capture());
+        assertEquals(50, productCap.getValue().getAvailabilityCount());
+
+        verify(stockDeliveryRepository).save(any(StockDelivery.class));
+    }
+
+    @Test
+    @DisplayName("CAT-US7: recordStockDelivery treats null availabilityCount as 0 (null-safe)")
+    void recordDelivery_nullStockTreatedAsZero() {
+        Product product = new Product("X", "Item", new BigDecimal("5.00"), null); // null stock
+        product.setId(1L);
+        User admin = sampleAdmin();
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(stockDeliveryRepository.save(any(StockDelivery.class)))
+                .thenAnswer(inv -> {
+                    StockDelivery d = inv.getArgument(0);
+                    d.setId(1L);
+                    return d;
+                });
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RecordStockDeliveryRequest req = new RecordStockDeliveryRequest();
+        req.setDeliveryDate(LocalDate.of(2026, 4, 1));
+        req.setQuantityReceived(15);
+
+        StockDeliveryResponse response = productService.recordStockDelivery(1L, req, admin);
+
+        assertEquals(15, response.getNewAvailabilityCount());
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  CAT-US8: minStockThreshold persisted on create and update
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("CAT-US8: createProduct persists minStockThreshold when provided")
+    void createProduct_persistsThreshold() {
+        when(productRepository.existsByProductCode("T1")).thenReturn(false);
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateProductRequest req = newCreateRequest("t1", "Item", "5.00", 10);
+        req.setMinStockThreshold(5);
+
+        Product result = productService.createProduct(req);
+
+        assertEquals(5, result.getMinStockThreshold());
+    }
+
+    @Test
+    @DisplayName("CAT-US8: createProduct with no threshold leaves field null")
+    void createProduct_nullThresholdLeavesNull() {
+        when(productRepository.existsByProductCode("T2")).thenReturn(false);
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Product result = productService.createProduct(newCreateRequest("t2", "Item", "5.00", 10));
+
+        assertNull(result.getMinStockThreshold());
+    }
+
+    @Test
+    @DisplayName("CAT-US8: updateProduct persists minStockThreshold when provided")
+    void updateProduct_persistsThreshold() {
+        Product existing = sampleProduct(1L, "X", "Old", "5.00", 10);
+        when(productRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UpdateProductRequest req = newUpdateRequest("Updated", "8.00", 20);
+        req.setMinStockThreshold(3);
+
+        Product result = productService.updateProduct(1L, req);
+
+        assertEquals(3, result.getMinStockThreshold());
+    }
+
+    @Test
+    @DisplayName("CAT-US8: updateProduct with null threshold clears existing threshold")
+    void updateProduct_nullThresholdClearsField() {
+        Product existing = sampleProduct(1L, "X", "Old", "5.00", 10);
+        existing.setMinStockThreshold(10);
+        when(productRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Product result = productService.updateProduct(1L, newUpdateRequest("Updated", "8.00", 20));
+
+        assertNull(result.getMinStockThreshold());
+    }
 }
 
 /*
  * WebMvc slice — same source file as CatalogueCatTest; Surefire discovers *Test classes.
  */
 @WebMvcTest(controllers = ProductController.class)
-@DisplayName("ProductController — WebMvc slice (CAT-US2/US3/US4/US5/US6)")
+@Import(SecurityConfig.class)
+@DisplayName("ProductController — WebMvc slice (CAT-US2/US3/US4/US5/US6/US7/US8)")
 @SuppressWarnings({"null", "unused"})
 class ProductControllerCatalogueCatWebMvcTest {
+
+    /** Registers Spring Security method-security AOP advisors for @PreAuthorize checks. */
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class MethodSecurityTestConfig {}
 
     @Autowired
     private MockMvc mockMvc;
@@ -594,5 +750,107 @@ class ProductControllerCatalogueCatWebMvcTest {
                         .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray());
+    }
+
+    // ── CAT-US7: POST /api/products/{id}/deliveries ─────────────────────────
+
+    @Test
+    @DisplayName("POST /api/products/1/deliveries with valid body + ADMIN → 201 Created")
+    void recordDelivery_valid_returns201() throws Exception {
+        User admin = new User();
+        admin.setId(1L);
+        admin.setUsername("admin");
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(admin));
+
+        StockDeliveryResponse mockResponse = new StockDeliveryResponse();
+        when(productService.recordStockDelivery(eq(1L), any(RecordStockDeliveryRequest.class), any(User.class)))
+                .thenReturn(mockResponse);
+
+        String body = """
+                {"deliveryDate":"2026-04-01","quantityReceived":50}""";
+
+        mockMvc.perform(post("/api/products/1/deliveries")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("POST /api/products/1/deliveries with quantity=0 → 400 Bad Request")
+    void recordDelivery_zeroQuantity_returns400() throws Exception {
+        String body = """
+                {"deliveryDate":"2026-04-01","quantityReceived":0}""";
+
+        mockMvc.perform(post("/api/products/1/deliveries")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("POST /api/products/1/deliveries as MERCHANT → 403 Forbidden")
+    void recordDelivery_merchantForbidden_returns403() throws Exception {
+        String body = """
+                {"deliveryDate":"2026-04-01","quantityReceived":10}""";
+
+        mockMvc.perform(post("/api/products/1/deliveries")
+                        .with(user("merchant").roles("MERCHANT"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("POST /api/products/1/deliveries with missing body → 400 Bad Request")
+    void recordDelivery_emptyBody_returns400() throws Exception {
+        mockMvc.perform(post("/api/products/1/deliveries")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ── CAT-US8: PUT with invalid minStockThreshold ─────────────────────────
+
+    @Test
+    @DisplayName("PUT /api/products/1 with minStockThreshold=-1 → 400 Bad Request")
+    void update_negativeThreshold_returns400() throws Exception {
+        String body = """
+                {"description":"Test","price":5.00,"availabilityCount":10,"minStockThreshold":-1}""";
+
+        mockMvc.perform(put("/api/products/1")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PUT /api/products/1 with minStockThreshold=5 → 200 OK")
+    void update_validThreshold_returns200() throws Exception {
+        UpdateProductRequest req = new UpdateProductRequest();
+        req.setDescription("Updated");
+        req.setPrice(new BigDecimal("10.00"));
+        req.setAvailabilityCount(50);
+        req.setMinStockThreshold(5);
+
+        Product updated = new Product("X", "Updated", new BigDecimal("10.00"), 50);
+        updated.setId(1L);
+        updated.setMinStockThreshold(5);
+        when(productService.updateProduct(eq(1L), any(UpdateProductRequest.class))).thenReturn(updated);
+
+        mockMvc.perform(put("/api/products/1")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk());
     }
 }

@@ -50,11 +50,30 @@ public class Product {
 
     /*
      * How many units are currently available in stock.
-     * This value is REDUCED inside OrderService when a merchant places an order.
+     * This value is REDUCED inside OrderService when a merchant places an order
+     * and INCREASED by stock deliveries (CAT-US7).
      * The @Column annotation lets us customise the database column name.
      */
     @Column(name = "availability_count")
     private Integer availabilityCount;
+
+    /*
+     * ── MINIMUM STOCK THRESHOLD (CAT-US8) ────────────────────────────────────
+     *
+     * The minimum number of units the administrator considers safe to hold.
+     * When availabilityCount falls AT OR BELOW this value, the product is
+     * considered "low stock" (used by future CAT-US9 warnings).
+     *
+     * Semantics:
+     *   null  = no threshold configured for this product
+     *   0     = threshold at zero (flags only when stock hits 0)
+     *   N > 0 = flag when availabilityCount <= N
+     *
+     * Hibernate ddl-auto=update adds this nullable column without touching
+     * existing rows; legacy rows will have null (= no threshold set).
+     */
+    @Column(name = "min_stock_threshold")
+    private Integer minStockThreshold;
 
     public Product() {
     }
@@ -109,5 +128,13 @@ public class Product {
 
     public void setAvailabilityCount(Integer availabilityCount) {
         this.availabilityCount = availabilityCount;
+    }
+
+    public Integer getMinStockThreshold() {
+        return minStockThreshold;
+    }
+
+    public void setMinStockThreshold(Integer minStockThreshold) {
+        this.minStockThreshold = minStockThreshold;
     }
 }

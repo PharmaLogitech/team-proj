@@ -7,20 +7,25 @@
  * ║        masking for merchants (CAT-US6).                                     ║
  * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add inventory management: restockProduct(Long id, int qty).        ║
+ * ║        - Add inventory management: recordStockDelivery already done (US7).  ║
+ * ║        - Add stock-take / adjustment endpoints as needed.                   ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.service;
 
 import com.ipos.dto.CatalogueProductDto;
 import com.ipos.dto.CreateProductRequest;
+import com.ipos.dto.RecordStockDeliveryRequest;
+import com.ipos.dto.StockDeliveryResponse;
 import com.ipos.dto.UpdateProductRequest;
 import com.ipos.entity.Product;
 import com.ipos.entity.ProductDeletionLog;
+import com.ipos.entity.StockDelivery;
 import com.ipos.entity.User;
 import com.ipos.repository.OrderItemRepository;
 import com.ipos.repository.ProductDeletionLogRepository;
 import com.ipos.repository.ProductRepository;
+import com.ipos.repository.StockDeliveryRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,15 +43,18 @@ public class ProductService {
     private final CatalogueService catalogueService;
     private final OrderItemRepository orderItemRepository;
     private final ProductDeletionLogRepository productDeletionLogRepository;
+    private final StockDeliveryRepository stockDeliveryRepository;
 
     public ProductService(ProductRepository productRepository,
                           CatalogueService catalogueService,
                           OrderItemRepository orderItemRepository,
-                          ProductDeletionLogRepository productDeletionLogRepository) {
+                          ProductDeletionLogRepository productDeletionLogRepository,
+                          StockDeliveryRepository stockDeliveryRepository) {
         this.productRepository = productRepository;
         this.catalogueService = catalogueService;
         this.orderItemRepository = orderItemRepository;
         this.productDeletionLogRepository = productDeletionLogRepository;
+        this.stockDeliveryRepository = stockDeliveryRepository;
     }
 
     public List<Product> findAll() {
@@ -108,6 +116,7 @@ public class ProductService {
         product.setDescription(request.getDescription().trim());
         product.setPrice(request.getPrice());
         product.setAvailabilityCount(request.getAvailabilityCount());
+        product.setMinStockThreshold(request.getMinStockThreshold()); // CAT-US8: optional
         return productRepository.save(product);
     }
 
@@ -123,7 +132,47 @@ public class ProductService {
         product.setDescription(request.getDescription().trim());
         product.setPrice(request.getPrice());
         product.setAvailabilityCount(request.getAvailabilityCount());
+        product.setMinStockThreshold(request.getMinStockThreshold()); // CAT-US8: null clears threshold
         return productRepository.save(product);
+    }
+
+    /**
+     * Records a stock delivery and atomically increments the product's availabilityCount (CAT-US7).
+     *
+     * <p>Null-safe: if a legacy product row has a null availabilityCount, it is treated as 0
+     * before adding the delivery quantity.
+     *
+     * @param productId  the surrogate PK of the product being restocked
+     * @param request    validated delivery data (date, quantity ≥ 1, optional supplier ref)
+     * @param recordedBy the ADMIN user recording this delivery
+     * @return response DTO with delivery details and updated stock count
+     * @throws ResponseStatusException 404 if product not found
+     */
+    @Transactional
+    public StockDeliveryResponse recordStockDelivery(Long productId,
+                                                      RecordStockDeliveryRequest request,
+                                                      User recordedBy) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Product not found with id: " + productId));
+
+        // Null-safe: treat missing count as 0 (legacy rows)
+        int current = product.getAvailabilityCount() != null ? product.getAvailabilityCount() : 0;
+        int newCount = current + request.getQuantityReceived();
+        product.setAvailabilityCount(newCount);
+
+        StockDelivery delivery = new StockDelivery();
+        delivery.setProduct(product);
+        delivery.setDeliveryDate(request.getDeliveryDate());
+        delivery.setQuantityReceived(request.getQuantityReceived());
+        delivery.setSupplierReference(request.getSupplierReference());
+        delivery.setRecordedBy(recordedBy);
+        delivery.setRecordedAt(Instant.now());
+
+        stockDeliveryRepository.save(delivery);
+        productRepository.save(product);
+
+        return StockDeliveryResponse.from(delivery, newCount);
     }
 
     /**
