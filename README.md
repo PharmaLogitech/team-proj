@@ -214,14 +214,14 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/merchant-accounts" -Method Pos
    `cd frontend` then `npm run dev`.
 4. Open **http://localhost:5173** in your browser.
 5. On the Login screen, enter credentials (e.g., `admin` / `admin123`) and click **Log in**.
-6. Navigation items are shown based on your role. Use **Catalogue** to view products and **Place Order** to create orders. **Accounts** (admin) creates merchants; **Merchants** (manager/admin) edits profiles, standing, flexible month-close.
+6. Navigation items are shown based on your role. Use **Catalogue** to browse and manage products (admin: create, edit, delete, record stock deliveries, set min-stock thresholds); **Place Order** to create orders; **Reporting** (manager/admin) for the low-stock report; **Accounts** (admin) to create merchants; **Merchants** (manager/admin) to edit profiles, standing, and flexible month-close.
 
-To place orders, you need products. Log in as admin and create them via the API (there is no admin catalogue UI yet — see `CATprogress.txt`):
+To place orders, you need products. As **admin**, use the Catalogue UI, or create one via the API (requires `productCode`, `description`, `price`, `availabilityCount`; optional `minStockThreshold`):
 
 ```powershell
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"admin123"}' -WebSession $session
-Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -ContentType "application/json" -Body '{"description":"Paracetamol 500mg","price":4.99,"availabilityCount":100}' -WebSession $session
+Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -ContentType "application/json" -Body '{"productCode":"PARA500","description":"Paracetamol 500mg","price":4.99,"availabilityCount":100}' -WebSession $session
 ```
 
 ---
@@ -247,9 +247,9 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 |----------------|--------------------|--------|
 | **IPOS-SA-ACC** | Implemented (prototype) | Merchant onboarding (`POST /api/merchant-accounts`, validated DTO), staff users (`/api/users`), RBAC. See **`ACCprogress.txt`**. |
 | **IPOS-SA-MER** | Implemented (prototype) | Merchant **profiles**: `GET`/`PUT /api/merchant-profiles`, flexible **month-close** (`POST .../close-month`), contact edits, standing rules (`IN_DEFAULT` → `NORMAL`/`SUSPENDED` with 30-day rule for managers), **`StandingChangeLog`** audit. Manager + Admin only (not merchants). Documented in **`ACCprogress.txt`** / **`RBAC.md`**. |
-| **IPOS-SA-CAT** | Partial | `Product` entity, `GET`/`POST`/`PUT`/`DELETE /api/products` (ADMIN), `GET /api/products/search` (all roles, CAT-US5). Role-aware `CatalogueProductDto` hides numeric stock from merchants (CAT-US6). Admin catalogue UI with create, edit modal, delete Yes/No, and multi-criteria search. `ProductDeletionLog` audit entity. **No** deliveries, min-stock, or low-stock reporting yet. See **`CATprogress.txt`**. |
+| **IPOS-SA-CAT** | Mostly complete (US1 partial) | Full product CRUD with unique `productCode` (SKU), `ProductDeletionLog` on delete, multi-criteria `GET /api/products/search` (CAT-US5), role-aware catalogue (`CatalogueProductDto` masks stock for merchants — CAT-US6), `POST /api/products/{id}/deliveries` for stock deliveries (CAT-US7), optional `minStockThreshold` on products (CAT-US8), catalogue UI with admin tools (init, create/edit with threshold, “+ Stock” delivery modal, search). **CAT-US9:** admin low-stock banner (strict `<` threshold rule) plus inline table warnings. **CAT-US10:** shared backend query `GET /api/reports/low-stock`. **CAT-US1** gap: catalogue init is not enforced before adding products. See **`CATprogress.txt`**. |
 | **IPOS-SA-ORD** | Partial | `POST /api/orders`: stock decrement, price snapshot, discounts, credit limit, **ORD-US1** (merchants forced to own `merchantId`). `GET /api/orders` returns **all** orders for any authenticated user (merchant-scoped list not implemented). Invoices/payments/status workflow still to do. |
-| **IPOS-SA-RPRT** | Stub | `ReportingPlaceholder.jsx`; `/api/reports/**` secured for manager/admin — **no** report controllers yet. |
+| **IPOS-SA-RPRT** | Partial | **`GET /api/reports/low-stock`** (MANAGER, ADMIN): real-time low-stock snapshot (CAT-US10). **`ReportingPlaceholder.jsx`** shows the report table plus a stub list for future RPT-US1–US5. Full operational reporting suite not implemented. |
 
 ---
 
@@ -274,18 +274,29 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 | Merchant accounts | `POST /api/merchant-accounts` | ADMIN |
 | Merchant profiles | `GET`/`PUT /api/merchant-profiles`, `GET /api/merchant-profiles/{userId}`, `POST /api/merchant-profiles/close-month` | MANAGER, ADMIN |
 | Staff users | `/api/users/**` | ADMIN |
-| Products | `GET /api/products` | Authenticated |
+| Catalogue | `GET`/`POST /api/catalogue/**` | ADMIN |
+| Products | `GET /api/products`, `GET /api/products/search` | Authenticated |
 | Products | `POST`/`PUT`/`DELETE /api/products/**` | ADMIN |
+| Products | `POST /api/products/{id}/deliveries` | ADMIN |
 | Orders | `/api/orders/**` | Authenticated |
-| Reports | `/api/reports/**` | MANAGER, ADMIN (no handlers yet) |
+| Reports | `GET /api/reports/low-stock` | MANAGER, ADMIN (`/api/reports/**`) |
 
-Full detail: **`RBAC.md`** and `backend/.../SecurityConfig.java`.
+Additional report endpoints can be added under `/api/reports/**` using the same security rule in `SecurityConfig.java`. Full detail: **`RBAC.md`**.
 
 ---
 
 ## Backend Tests
 
-JUnit 5 **unit** tests live under `backend/src/test/java/` — **`com.ipos.service.MerchantAccountServiceTest`** (20 tests: merchant creation, tier validation, fixed/flexible order math, credit limit, ORD-US1 isolation, `AccountStatus`, `inDefaultSince`, `StandingChangeLog` entity checks, suspended/in-default blocking) and **`com.ipos.cat.CatalogueCatTest`** (15 Mockito unit tests for CAT-US1–US4 + 5 WebMvc integration tests for POST/PUT/DELETE validation and happy paths).
+JUnit 5 tests live under `backend/src/test/java/` (**70 tests** total with the test profile):
+
+| Class | Role |
+|-------|------|
+| **`com.ipos.service.MerchantAccountServiceTest`** | 20 Mockito unit tests — merchant creation, tiers, discounts, credit limit, ORD-US1 isolation, standing, etc. |
+| **`com.ipos.cat.CatalogueCatTest`** | 31 Mockito unit tests — product CRUD, search, stock masking, deliveries, thresholds, low-stock service logic. |
+| **`com.ipos.cat.ProductControllerCatalogueCatWebMvcTest`** | 15 WebMvc tests — `ProductController`, validation and RBAC for products/search/deliveries. |
+| **`com.ipos.cat.ReportControllerWebMvcTest`** | 4 WebMvc tests — `GET /api/reports/low-stock` access rules. |
+
+There are **no frontend tests**.
 
 Test profile (H2 in-memory, bootstrap off):
 
@@ -324,10 +335,18 @@ team-proj/
 │       │   │   ├── CreateMerchantAccountRequest.java  # ACC-US1
 │       │   │   ├── MerchantProfileResponse.java       # Profile DTO
 │       │   │   ├── UpdateMerchantProfileRequest.java   # ACC-US6
-│       │   │   └── CloseMonthRequest.java              # Flexible settlement
+│       │   │   ├── CloseMonthRequest.java              # Flexible settlement
+│       │   │   ├── CatalogueProductDto.java            # Role-aware catalogue (CAT-US6)
+│       │   │   ├── CreateProductRequest.java / UpdateProductRequest.java
+│       │   │   ├── RecordStockDeliveryRequest.java / StockDeliveryResponse.java  # CAT-US7
+│       │   │   ├── LowStockProductDto.java             # CAT-US9/US10 report rows
+│       │   │   └── …
 │       │   ├── entity/
 │       │   │   ├── User.java
-│       │   │   ├── Product.java
+│       │   │   ├── Product.java         # productCode, minStockThreshold (CAT-US8)
+│       │   │   ├── StockDelivery.java   # CAT-US7 — stock_deliveries
+│       │   │   ├── ProductDeletionLog.java  # CAT-US3 audit
+│       │   │   ├── CatalogueMetadata.java   # CAT-US1 singleton
 │       │   │   ├── Order.java           # pricing, discounts, totalDue, status
 │       │   │   ├── OrderItem.java       # unitPriceAtOrder snapshot
 │       │   │   ├── MerchantProfile.java # contact, credit, plans, standing, accountStatus, inDefaultSince
@@ -336,13 +355,17 @@ team-proj/
 │       │   ├── repository/
 │       │   │   ├── UserRepository.java
 │       │   │   ├── ProductRepository.java
+│       │   │   ├── StockDeliveryRepository.java
+│       │   │   ├── ProductDeletionLogRepository.java
+│       │   │   ├── CatalogueMetadataRepository.java
 │       │   │   ├── OrderRepository.java / OrderItemRepository.java
 │       │   │   ├── MerchantProfileRepository.java
 │       │   │   ├── MonthlyRebateSettlementRepository.java
 │       │   │   └── StandingChangeLogRepository.java
 │       │   ├── service/
 │       │   │   ├── UserService.java
-│       │   │   ├── ProductService.java
+│       │   │   ├── ProductService.java  # CRUD, search, deliveries, low-stock query
+│       │   │   ├── CatalogueService.java  # CAT-US1 init
 │       │   │   ├── OrderService.java    # Discount + credit limit + standing logic
 │       │   │   └── MerchantAccountService.java  # Account creation + month-close
 │       │   └── controller/
@@ -350,13 +373,17 @@ team-proj/
 │       │       ├── UserController.java  # Staff CRUD (admin only)
 │       │       ├── MerchantAccountController.java   # POST create (admin only)
 │       │       ├── MerchantProfileController.java   # GET/PUT + close-month
+│       │       ├── CatalogueController.java         # CAT-US1
 │       │       ├── ProductController.java
+│       │       ├── ReportController.java            # CAT-US10 — /api/reports/low-stock
 │       │       └── OrderController.java
 │       └── resources/
 │           └── application.properties
 │   └── src/test/
 │       ├── java/com/ipos/service/
 │       │   └── MerchantAccountServiceTest.java   # JUnit 5 + Mockito
+│       ├── java/com/ipos/cat/
+│       │   └── CatalogueCatTest.java             # CAT unit + WebMvc slices
 │       └── resources/
 │           └── application-test.properties       # H2, ipos.bootstrap.enabled=false
 └── frontend/                          # React + Vite
@@ -365,13 +392,13 @@ team-proj/
     ├── index.html
     └── src/
         ├── main.jsx                   # Entry point (wraps app with AuthProvider)
-        ├── App.jsx                    # Root component with RBAC navigation
+        ├── App.jsx                    # RBAC navigation; admin low-stock banner (CAT-US9)
         ├── App.css
         ├── api.js                     # Centralized API calls (with auth)
         ├── Login.jsx                  # Username + password login form
-        ├── Catalogue.jsx
+        ├── Catalogue.jsx              # Catalogue + admin tools, search, deliveries (CAT)
         ├── OrderForm.jsx              # Extended: shows discount breakdown
-        ├── ReportingPlaceholder.jsx   # Stub for IPOS-SA-RPRT
+        ├── ReportingPlaceholder.jsx   # Low-stock report + RPT future stubs (IPOS-SA-RPRT)
         ├── MerchantCreate.jsx         # Admin: create merchant accounts (ACC-US1)
         ├── MerchantManagement.jsx     # Manager+Admin: profiles, standing, month-close
         └── auth/
@@ -386,15 +413,15 @@ team-proj/
 Tables are created automatically by Hibernate on first run.
 
 ```
-┌──────────────┐       ┌──────────────┐
-│    users     │       │   products   │
-├──────────────┤       ├──────────────┤
-│ id (PK)      │       │ id (PK)      │
-│ name         │       │ description  │
-│ username     │       │ price        │
-│ password_hash│       │ availability │
-│ role         │       │   _count     │
-└──────┬───────┘       └──────┬───────┘
+┌──────────────┐       ┌──────────────────────────────────┐
+│    users     │       │            products              │
+├──────────────┤       ├──────────────────────────────────┤
+│ id (PK)      │       │ id (PK)                          │
+│ name         │       │ product_code (unique SKU)        │
+│ username     │       │ description, price             │
+│ password_hash│       │ availability_count             │
+│ role         │       │ min_stock_threshold (nullable)   │
+└──────┬───────┘       └──────┬───────────────────────────┘
        │                      │
        │  ┌────────────────────────────┐
        ├──│     merchant_profiles      │
@@ -459,6 +486,8 @@ Tables are created automatically by Hibernate on first run.
           └──────────────────────────────────┘
 ```
 
+**Additional catalogue / inventory tables (Hibernate-managed):** `catalogue_metadata` (CAT-US1 init flag), `product_deletion_logs` (CAT-US3 delete audit), `stock_deliveries` (CAT-US7 — links to `products` and `users` for recorded-by).
+
 ---
 
 ## Prerequisite knowledge needed
@@ -470,4 +499,4 @@ Tables are created automatically by Hibernate on first run.
 - Jakarta Bean Validation: used on merchant account DTOs (`spring-boot-starter-validation`).
 - Full stack: frontend → REST API → service → repository → MySQL.
 
-Remaining work is tracked in **`CATprogress.txt`** (catalogue/inventory) and the **Reporting** stub; **`ACCprogress.txt`** summarises the account-management package status.
+Remaining work is tracked in **`CATprogress.txt`** (e.g. CAT-US1 enforcement) and future **RPT** stories beyond the low-stock report; **`ACCprogress.txt`** summarises the account-management package status.
