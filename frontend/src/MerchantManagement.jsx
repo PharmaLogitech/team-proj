@@ -90,25 +90,41 @@ function MerchantManagement() {
       }
 
       if (editForm.discountPlanType !== original.discountPlanType) {
+        // Plan type changed — include the type and its relevant parameter.
         payload.discountPlanType = editForm.discountPlanType;
         if (editForm.discountPlanType === "FIXED") {
           payload.fixedDiscountPercent = Number(editForm.fixedDiscountPercent);
         } else {
           payload.flexibleTiersJson = editForm.flexibleTiersJson;
         }
+      } else if (
+        editForm.discountPlanType === "FIXED" &&
+        String(editForm.fixedDiscountPercent) !== String(original.fixedDiscountPercent || "")
+      ) {
+        // Plan type unchanged but fixed percent changed — must send type for backend to apply it.
+        payload.discountPlanType = editForm.discountPlanType;
+        payload.fixedDiscountPercent = Number(editForm.fixedDiscountPercent);
+      } else if (
+        editForm.discountPlanType === "FLEXIBLE" &&
+        editForm.flexibleTiersJson !== (original.flexibleTiersJson || "")
+      ) {
+        // Plan type unchanged but flexible tiers changed — must send type for backend to apply it.
+        payload.discountPlanType = editForm.discountPlanType;
+        payload.flexibleTiersJson = editForm.flexibleTiersJson;
       }
 
       if (editForm.standing !== original.standing) {
         payload.standing = editForm.standing;
       }
 
-      if (editForm.contactEmail !== original.contactEmail) {
+      // Normalise null → "" so untouched null fields don't falsely appear as changed.
+      if (editForm.contactEmail !== (original.contactEmail || "")) {
         payload.contactEmail = editForm.contactEmail;
       }
-      if (editForm.contactPhone !== original.contactPhone) {
+      if (editForm.contactPhone !== (original.contactPhone || "")) {
         payload.contactPhone = editForm.contactPhone;
       }
-      if (editForm.addressLine !== original.addressLine) {
+      if (editForm.addressLine !== (original.addressLine || "")) {
         payload.addressLine = editForm.addressLine;
       }
 
