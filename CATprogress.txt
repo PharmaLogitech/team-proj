@@ -4,7 +4,7 @@
 
 Generated     : 2026-04-03 (updated)
 Epic          : Electronic Catalogue and Inventory Control
-Companion doc : ACCprogress.txt (same directory — Account Management)
+Companion docs: ACCprogress.txt (Account Management), ORDprogress.txt (Order Fulfillment)
 
 This document maps each CAT user story (US1–US10) to the current codebase,
 states what is DONE vs NOT DONE, and notes any remaining gaps.

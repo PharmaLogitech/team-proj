@@ -248,7 +248,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 | **IPOS-SA-ACC** | Implemented (prototype) | Merchant onboarding (`POST /api/merchant-accounts`, validated DTO), staff users (`/api/users`), RBAC. See **`ACCprogress.txt`**. |
 | **IPOS-SA-MER** | Implemented (prototype) | Merchant **profiles**: `GET`/`PUT /api/merchant-profiles`, flexible **month-close** (`POST .../close-month`), contact edits, standing rules (`IN_DEFAULT` → `NORMAL`/`SUSPENDED` with 30-day rule for managers), **`StandingChangeLog`** audit. Manager + Admin only (not merchants). Documented in **`ACCprogress.txt`** / **`RBAC.md`**. |
 | **IPOS-SA-CAT** | Mostly complete (US1 partial) | Full product CRUD with unique `productCode` (SKU), `ProductDeletionLog` on delete, multi-criteria `GET /api/products/search` (CAT-US5), role-aware catalogue (`CatalogueProductDto` masks stock for merchants — CAT-US6), `POST /api/products/{id}/deliveries` for stock deliveries (CAT-US7), optional `minStockThreshold` on products (CAT-US8), catalogue UI with admin tools (init, create/edit with threshold, “+ Stock” delivery modal, search). **CAT-US9:** admin low-stock banner (strict `<` threshold rule) plus inline table warnings. **CAT-US10:** shared backend query `GET /api/reports/low-stock`. **CAT-US1** gap: catalogue init is not enforced before adding products. See **`CATprogress.txt`**. |
-| **IPOS-SA-ORD** | Partial | `POST /api/orders`: stock decrement, price snapshot, discounts, credit limit, **ORD-US1** (merchants forced to own `merchantId`). `GET /api/orders` returns **all** orders for any authenticated user (merchant-scoped list not implemented). Invoices/payments/status workflow still to do. |
+| **IPOS-SA-ORD** | Partial (US1/US2/US4 done) | **ORD-US1:** multi-line order placement with ACCEPTED status, merchant isolation, empty-items validation. **ORD-US2:** role-scoped `GET /api/orders` (MERCHANT own orders; staff all), `PUT /api/orders/{id}/status` lifecycle (ACCEPTED/PROCESSING/DISPATCHED/CANCELLED), frontend tracking table with polling + staff action buttons. **ORD-US4:** stock decremented atomically at placement. Invoices (US3/US5) and payments (US6) not yet started. |
 | **IPOS-SA-RPRT** | Partial | **`GET /api/reports/low-stock`** (MANAGER, ADMIN): real-time low-stock snapshot (CAT-US10). **`ReportingPlaceholder.jsx`** shows the report table plus a stub list for future RPT-US1–US5. Full operational reporting suite not implemented. |
 
 ---
@@ -260,8 +260,9 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 | **`RBAC.md`** (project root) | Role × package matrix, endpoint access, architecture notes. |
 | **`ACCprogress.txt`** | Account management epic: user stories, implementation detail, tests, gaps. |
 | **`CATprogress.txt`** | Catalogue / inventory epic: current vs remaining work (detailed). |
+| **`ORDprogress.txt`** | Orders & financial tracking epic (ORD-US1–US6): verbatim user stories + implementation status. |
 
-**Note:** `RBAC.md` is the live reference for roles × packages and URL rules. If its “Future work” checklist ever drifts from **`ACCprogress.txt`** / **`CATprogress.txt`**, treat the progress files as the detailed source of truth for story completion.
+**Note:** `RBAC.md` is the live reference for roles × packages and URL rules. If its “Future work” checklist ever drifts from **`ACCprogress.txt`** / **`CATprogress.txt`** / **`ORDprogress.txt`**, treat the progress files as the detailed source of truth for story completion.
 
 ---
 
@@ -278,7 +279,8 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 | Products | `GET /api/products`, `GET /api/products/search` | Authenticated |
 | Products | `POST`/`PUT`/`DELETE /api/products/**` | ADMIN |
 | Products | `POST /api/products/{id}/deliveries` | ADMIN |
-| Orders | `/api/orders/**` | Authenticated |
+| Orders | `GET`/`POST /api/orders` | Authenticated (GET is role-scoped) |
+| Orders | `PUT /api/orders/{id}/status` | MANAGER, ADMIN |
 | Reports | `GET /api/reports/low-stock` | MANAGER, ADMIN (`/api/reports/**`) |
 
 Additional report endpoints can be added under `/api/reports/**` using the same security rule in `SecurityConfig.java`. Full detail: **`RBAC.md`**.
@@ -287,7 +289,7 @@ Additional report endpoints can be added under `/api/reports/**` using the same 
 
 ## Backend Tests
 
-JUnit 5 tests live under `backend/src/test/java/` (**70 tests** total with the test profile):
+JUnit 5 tests live under `backend/src/test/java/` (**83 tests** total with the test profile):
 
 | Class | Role |
 |-------|------|
@@ -295,6 +297,8 @@ JUnit 5 tests live under `backend/src/test/java/` (**70 tests** total with the t
 | **`com.ipos.cat.CatalogueCatTest`** | 31 Mockito unit tests — product CRUD, search, stock masking, deliveries, thresholds, low-stock service logic. |
 | **`com.ipos.cat.ProductControllerCatalogueCatWebMvcTest`** | 15 WebMvc tests — `ProductController`, validation and RBAC for products/search/deliveries. |
 | **`com.ipos.cat.ReportControllerWebMvcTest`** | 4 WebMvc tests — `GET /api/reports/low-stock` access rules. |
+| **`com.ipos.ord.ORDOrderTest`** | 8 Mockito unit tests — ORD-US1 placeOrder ACCEPTED status, empty/null items rejection; ORD-US2 findOrdersForActor scoping, updateOrderStatus transitions. |
+| **`com.ipos.ord.OrderControllerWebMvcTest`** | 5 WebMvc tests — ORD-US2 GET role-scoped, PUT status RBAC (MANAGER 200, MERCHANT 403, unauth 401). |
 
 There are **no frontend tests**.
 
@@ -318,6 +322,7 @@ team-proj/
 ├── RBAC.md                          # Role x package access matrix (project root)
 ├── ACCprogress.txt                  # IPOS-SA-ACC progress & documentation
 ├── CATprogress.txt                  # IPOS-SA-CAT progress & backlog
+├── ORDprogress.txt                  # IPOS-SA-ORD progress & backlog
 ├── backend/                          # Spring Boot
 │   ├── pom.xml                      # Java 17; validation, security-test, H2 (test)
 │   └── src/main/
@@ -499,4 +504,4 @@ Tables are created automatically by Hibernate on first run.
 - Jakarta Bean Validation: used on merchant account DTOs (`spring-boot-starter-validation`).
 - Full stack: frontend → REST API → service → repository → MySQL.
 
-Remaining work is tracked in **`CATprogress.txt`** (e.g. CAT-US1 enforcement) and future **RPT** stories beyond the low-stock report; **`ACCprogress.txt`** summarises the account-management package status.
+Remaining work is tracked in **`CATprogress.txt`** (e.g. CAT-US1 enforcement), **`ORDprogress.txt`** (ORD-US1/US2/US4 done; ORD-US3/US5/US6 — invoices, balance, payments — not started), and future **RPT** stories beyond the low-stock report; **`ACCprogress.txt`** summarises the account-management package status.

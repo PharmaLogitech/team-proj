@@ -3,12 +3,18 @@
  * ║  WHAT: JPA Entity representing the "orders" table.                          ║
  * ║                                                                              ║
  * ║  WHY:  An Order records that a specific MERCHANT requested specific          ║
- * ║        products.  It has a status (PENDING, CONFIRMED, etc.) and links       ║
- * ║        to the merchant (User) who placed it and the items inside it.         ║
+ * ║        products.  It has a lifecycle status matching the brief examples      ║
+ * ║        (Accepted, Processing, Dispatched, Cancelled) and links to the       ║
+ * ║        merchant (User) who placed it and the items inside it.               ║
+ * ║                                                                              ║
+ * ║  ORDER STATUS LIFECYCLE (ORD-US1/US2):                                      ║
+ * ║        ACCEPTED → PROCESSING → DISPATCHED   (forward-only progression)      ║
+ * ║        Any non-DISPATCHED status → CANCELLED (cancellation branch)          ║
+ * ║        New orders are created with status ACCEPTED.                         ║
  * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
  * ║        - Add a "createdAt" timestamp field with @CreationTimestamp.          ║
- * ║        - Add more statuses to the OrderStatus enum (SHIPPED, DELIVERED…).   ║
+ * ║        - Add more statuses (DELIVERED, RETURNED, etc.) to OrderStatus.      ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.entity;
@@ -133,9 +139,27 @@ public class Order {
     @JsonManagedReference
     private List<OrderItem> items = new ArrayList<>();
 
+    /*
+     * ── ORDER STATUS ENUM (ORD-US1/US2) ──────────────────────────────────────
+     *
+     * Lifecycle: ACCEPTED → PROCESSING → DISPATCHED (forward-only).
+     * Cancellation: ACCEPTED or PROCESSING → CANCELLED.
+     * DISPATCHED orders cannot be cancelled.
+     *
+     * MIGRATION NOTE: Legacy orders may have PENDING or CONFIRMED from before
+     * this enum was updated. Run this SQL once on existing databases:
+     *   UPDATE orders SET status = 'ACCEPTED' WHERE status IN ('PENDING','CONFIRMED');
+     */
     public enum OrderStatus {
+        /** @deprecated Legacy — use ACCEPTED for new orders. Kept for DB compatibility. */
+        @Deprecated
         PENDING,
+        /** @deprecated Legacy — use ACCEPTED for new orders. Kept for DB compatibility. */
+        @Deprecated
         CONFIRMED,
+        ACCEPTED,
+        PROCESSING,
+        DISPATCHED,
         CANCELLED
     }
 

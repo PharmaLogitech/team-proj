@@ -2,27 +2,21 @@
  * ╔══════════════════════════════════════════════════════════════════════════════╗
  * ║  WHAT: REST Controller for Order endpoints (IPOS-SA-ORD).                   ║
  * ║                                                                              ║
- * ║  WHY:  This is how merchants place orders from the React frontend.           ║
- * ║        The frontend sends a JSON payload with the merchant ID and a list     ║
- * ║        of {productId, quantity} pairs.  This controller parses that          ║
- * ║        payload, converts it into entity objects, and delegates to            ║
- * ║        OrderService.placeOrder() — where the real logic lives.              ║
+ * ║  WHY:  This is how merchants place and track orders from the React          ║
+ * ║        frontend.  The controller delegates business logic to OrderService.  ║
  * ║                                                                              ║
- * ║  ACCESS CONTROL (ACC-US4 — RBAC):                                           ║
- * ║        Enforced in SecurityConfig.java:                                     ║
- * ║        - /api/orders/** → Authenticated (all roles).                       ║
- * ║        Merchants place/track their own orders (ORD-US1).                   ║
- * ║        Admins and Managers can view all orders for oversight.               ║
+ * ║  ENDPOINTS:                                                                  ║
+ * ║        GET  /api/orders              Role-scoped order list (ORD-US2).      ║
+ * ║             MERCHANT: own orders only.  MANAGER/ADMIN: all orders.          ║
+ * ║        POST /api/orders              Place a new order (ORD-US1).           ║
+ * ║        PUT  /api/orders/{id}/status  Update order status (ORD-US2).         ║
+ * ║             MANAGER/ADMIN only.  Validates lifecycle transitions.            ║
  * ║                                                                              ║
- * ║  ORD-US1 (merchant isolation):                                               ║
- * ║        The controller extracts the authenticated user's ID and role from    ║
- * ║        the Spring Security context and passes them to the service.          ║
- * ║        If the caller is a MERCHANT, the service forces merchantId to the    ║
- * ║        caller's own ID — merchants cannot order on behalf of others.        ║
- * ║                                                                              ║
- * ║  FUTURE WORK:                                                                ║
- * ║        - Add GET /api/orders/mine for merchant-specific tracking.          ║
- * ║        - Add @PutMapping("/{id}/status") to update order status.           ║
+ * ║  ACCESS CONTROL (ACC-US4, RBAC):                                             ║
+ * ║        SecurityConfig.java:                                                  ║
+ * ║        - PUT .../orders/{id}/status  MANAGER, ADMIN                          ║
+ * ║        - /api/orders/ (all)          Authenticated (all roles)               ║
+ * ║        ORD-US1 merchant isolation enforced in OrderService.                  ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.controller;
@@ -34,10 +28,13 @@ import com.ipos.entity.User;
 import com.ipos.repository.UserRepository;
 import com.ipos.service.OrderService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -57,14 +54,19 @@ public class OrderController {
         this.userRepository = userRepository;
     }
 
-    /* GET /api/orders → Returns all orders (with their items, thanks to cascade). */
+    /**
+     * GET /api/orders -- role-scoped order listing (ORD-US2).
+     * MERCHANT sees only their own orders; MANAGER/ADMIN see all.
+     */
     @GetMapping
-    public List<Order> findAll() {
-        return orderService.findAll();
+    public List<Order> getOrders(Authentication auth) {
+        User caller = userRepository.findByUsername(auth.getName())
+                .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+        return orderService.findOrdersForActor(caller.getId(), caller.getRole());
     }
 
     /*
-     * POST /api/orders → Place a new order.
+     * POST /api/orders -- Place a new order.
      *
      * Expected JSON body:
      * {
@@ -84,7 +86,7 @@ public class OrderController {
             /*
              * Extract the authenticated user from the Spring Security context.
              * This is guaranteed to exist because SecurityConfig requires
-             * authentication for /api/orders/**.
+             * authentication for /api/orders.
              */
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             User caller = userRepository.findByUsername(auth.getName())
@@ -109,9 +111,28 @@ public class OrderController {
         }
     }
 
+    /**
+     * PUT /api/orders/{id}/status -- advance order lifecycle (ORD-US2).
+     * MANAGER / ADMIN only (SecurityConfig URL rule + @PreAuthorize defence-in-depth).
+     */
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public ResponseEntity<?> updateStatus(@PathVariable Long id,
+                                          @RequestBody UpdateOrderStatusRequest request) {
+        try {
+            Order updated = orderService.updateOrderStatus(id, request.status());
+            return ResponseEntity.ok(updated);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     /* Represents the full order request from the frontend. */
     record OrderRequest(Long merchantId, List<OrderItemRequest> items) {}
 
     /* Represents one item within the order request. */
     record OrderItemRequest(Long productId, Integer quantity) {}
+
+    /** Status update payload for PUT /api/orders/{id}/status. */
+    record UpdateOrderStatusRequest(Order.OrderStatus status) {}
 }

@@ -306,10 +306,16 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
 
                 /*
+                 * IPOS-SA-ORD (Orders) — status updates are MANAGER/ADMIN only.
+                 * PUT /api/orders/{id}/status advances the order lifecycle.
+                 * This rule must appear before the generic /api/orders/** catch-all.
+                 */
+                .requestMatchers(HttpMethod.PUT, "/api/orders/*/status").hasAnyRole("MANAGER", "ADMIN")
+
+                /*
                  * IPOS-SA-ORD (Orders) — All authenticated users.
-                 * Merchants place/track orders; Admins/Managers can view.
-                 * ORD-US1 merchant isolation is enforced in OrderService
-                 * (merchants are forced to their own ID).
+                 * GET: role-scoped listing (ORD-US2). POST: place order (ORD-US1).
+                 * ORD-US1 merchant isolation is enforced in OrderService.
                  */
                 .requestMatchers("/api/orders/**").authenticated()
 

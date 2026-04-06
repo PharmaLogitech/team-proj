@@ -13,6 +13,8 @@ Covers      : ACC-US1  Merchant Account Creation
               ACC-US5  Managing Defaulted Accounts
               ACC-US6  Managing Accounts
 
+Companion docs: CATprogress.txt (Catalogue), ORDprogress.txt (Orders & financial tracking)
+
 
 ================================================================================
  1. OVERVIEW — WHAT IS IPOS-SA-ACC?

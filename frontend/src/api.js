@@ -376,8 +376,8 @@ export async function placeOrder(merchantId, items) {
 }
 
 /**
- * Fetch ALL orders.
- * GET /api/orders → returns JSON array of order objects.
+ * Fetch orders (role-scoped by backend).
+ * GET /api/orders → MERCHANT sees own orders; MANAGER/ADMIN see all (ORD-US2).
  *
  * ACCESS: All authenticated users (IPOS-SA-ORD).
  */
@@ -387,4 +387,25 @@ export async function getOrders() {
     throw new Error("Failed to fetch orders");
   }
   return response.json();
+}
+
+/**
+ * Update an order's status.
+ * PUT /api/orders/{id}/status with JSON body { status }.
+ *
+ * ACCESS: MANAGER / ADMIN only (ORD-US2).
+ */
+export async function updateOrderStatus(orderId, status) {
+  const response = await fetchWithAuth(`${API_BASE}/orders/${orderId}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to update order status");
+  }
+
+  return data;
 }

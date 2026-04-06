@@ -11,9 +11,10 @@
  * ║        sumGrossByMerchantAndPeriod — Month-close flexible rebate: compute   ║
  * ║            the merchant's total gross spend for a calendar month.           ║
  * ║                                                                              ║
- * ║  HOW TO EXTEND:                                                              ║
- * ║        - List<Order> findByMerchantId(Long merchantId);                     ║
- * ║        - List<Order> findByStatus(Order.OrderStatus status);                ║
+ * ║  ORD-US2 (scoped order listing):                                             ║
+ * ║        findByMerchant_IdOrderByPlacedAtDesc — Merchant-scoped listing,     ║
+ * ║            newest first.                                                   ║
+ * ║        findAllByOrderByPlacedAtDesc — Staff listing (all orders).          ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.repository;
@@ -26,9 +27,16 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
+
+    /** Merchant-scoped listing, newest first (ORD-US2). */
+    List<Order> findByMerchant_IdOrderByPlacedAtDesc(Long merchantId);
+
+    /** Staff listing — all orders, newest first (ORD-US2). */
+    List<Order> findAllByOrderByPlacedAtDesc();
 
     /*
      * ── CREDIT LIMIT CHECK ──────────────────────────────────────────────────

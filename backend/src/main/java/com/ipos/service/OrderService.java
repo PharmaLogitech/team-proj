@@ -32,8 +32,14 @@
  * ║        authenticated user's own ID.  Merchants cannot place orders on       ║
  * ║        behalf of others.                                                    ║
  * ║                                                                              ║
+ * ║  ORD-US2 (order tracking / status updates):                                  ║
+ * ║        findOrdersForActor() returns role-scoped order lists.               ║
+ * ║        updateOrderStatus() enforces valid transitions:                     ║
+ * ║          ACCEPTED → PROCESSING → DISPATCHED (forward-only),               ║
+ * ║          ACCEPTED | PROCESSING → CANCELLED.                               ║
+ * ║        Only MANAGER / ADMIN may update status.                             ║
+ * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add an updateOrderStatus() method.                                 ║
  * ║        - Add cancellation logic that RESTORES stock.                        ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
@@ -50,13 +56,17 @@ import com.ipos.repository.MerchantProfileRepository;
 import com.ipos.repository.OrderRepository;
 import com.ipos.repository.ProductRepository;
 import com.ipos.repository.UserRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class OrderService {
@@ -76,8 +86,49 @@ public class OrderService {
         this.profileRepository = profileRepository;
     }
 
-    public List<Order> findAll() {
-        return orderRepository.findAll();
+    /**
+     * Valid forward transitions for the order lifecycle.
+     * ACCEPTED → PROCESSING → DISPATCHED (linear), plus cancellation branch.
+     */
+    private static final Map<Order.OrderStatus, Set<Order.OrderStatus>> VALID_TRANSITIONS = Map.of(
+            Order.OrderStatus.ACCEPTED,   Set.of(Order.OrderStatus.PROCESSING, Order.OrderStatus.CANCELLED),
+            Order.OrderStatus.PROCESSING, Set.of(Order.OrderStatus.DISPATCHED, Order.OrderStatus.CANCELLED)
+    );
+
+    /**
+     * Returns orders scoped by the caller's role (ORD-US2).
+     * MERCHANT sees only their own orders; MANAGER/ADMIN see all.
+     */
+    public List<Order> findOrdersForActor(Long callerUserId, User.Role callerRole) {
+        if (callerRole == User.Role.MERCHANT) {
+            return orderRepository.findByMerchant_IdOrderByPlacedAtDesc(callerUserId);
+        }
+        return orderRepository.findAllByOrderByPlacedAtDesc();
+    }
+
+    /**
+     * Advances an order's status along the allowed lifecycle (ORD-US2).
+     * Only MANAGER / ADMIN may call this (enforced at controller + SecurityConfig).
+     *
+     * @throws ResponseStatusException 404 if order not found, 400 if transition invalid
+     */
+    @Transactional
+    public Order updateOrderStatus(Long orderId, Order.OrderStatus newStatus) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Order not found with id: " + orderId));
+
+        Order.OrderStatus current = order.getStatus();
+        Set<Order.OrderStatus> allowed = VALID_TRANSITIONS.getOrDefault(current, Set.of());
+
+        if (!allowed.contains(newStatus)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot transition from " + current + " to " + newStatus
+                    + ". Allowed: " + allowed);
+        }
+
+        order.setStatus(newStatus);
+        return orderRepository.save(order);
     }
 
     /*
@@ -110,6 +161,12 @@ public class OrderService {
     @Transactional
     public Order placeOrder(Long merchantId, List<OrderItem> items,
                             Long callerUserId, User.Role callerRole) {
+
+        /* ── ORD-US1: Non-empty items validation ────────────────────────── */
+        if (items == null || items.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Order must contain at least one item.");
+        }
 
         /*
          * ── ORD-US1: Merchant Isolation ──────────────────────────────────
@@ -154,7 +211,7 @@ public class OrderService {
         /* Step 4: Create the order shell. */
         Order order = new Order();
         order.setMerchant(merchant);
-        order.setStatus(Order.OrderStatus.PENDING);
+        order.setStatus(Order.OrderStatus.ACCEPTED);
         order.setPlacedAt(Instant.now());
 
         /*

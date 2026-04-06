@@ -53,7 +53,7 @@ Configure `backend/src/main/resources/application.properties` with your MySQL cr
 |---------|------|--------|
 | Account Management | IPOS-SA-ACC | ✅ Complete |
 | Catalogue & Inventory | IPOS-SA-CAT | ⚠️ Mostly Complete (US1 partial) |
-| Orders & Fulfillment | IPOS-SA-ORD | ⚠️ Partial |
+| Orders & Fulfillment | IPOS-SA-ORD | ⚠️ Partial (US1/US2/US4 done; US3/US5/US6 not started) |
 | Merchant Profiles | IPOS-SA-MER | ✅ Complete |
 | Reporting | IPOS-SA-RPRT | ⚠️ Partial (low-stock report done; RPT-US1–5 remain) |
 
@@ -63,7 +63,7 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 
 **Key Services:**
 - **`service/ProductService.java`** — Full catalogue CRUD: create (CAT-US2), update (CAT-US4), delete with audit log (CAT-US3), role-aware list (CAT-US6), multi-criteria search (CAT-US5), stock delivery recording with atomic availability increment (CAT-US7), min-stock threshold support (CAT-US8), low-stock query for report and banner (CAT-US9/US10).
-- **`service/OrderService.java`** — Most complex service. Handles the entire order pipeline atomically: standing check → stock validation + decrement → price snapshot → discount calc (FIXED or FLEXIBLE credit) → credit limit enforcement → save.
+- **`service/OrderService.java`** — Most complex service. Handles the entire order pipeline atomically: standing check → stock validation + decrement → price snapshot → discount calc (FIXED or FLEXIBLE credit) → credit limit enforcement → save with status ACCEPTED. Also provides role-scoped order listing (`findOrdersForActor`) and lifecycle status updates (`updateOrderStatus`) with transition validation.
 - **`service/MerchantAccountService.java`** — Merchant creation (atomic User + MerchantProfile), flexible tier validation, month-close settlement with rebate calculation.
 - **`service/UserService.java`** — Staff user CRUD. Explicitly rejects `role=MERCHANT` (must use MerchantAccountService).
 - **`service/CatalogueService.java`** — Catalogue initialization guard (CAT-US1): ensures the catalogue is registered only once via `CatalogueMetadata` singleton row.
@@ -83,7 +83,7 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 - `StockDelivery` — id, product (ManyToOne), deliveryDate (LocalDate), quantityReceived, supplierReference (nullable, max 255), recordedBy (ManyToOne User), recordedAt (Instant). Table: `stock_deliveries`. CAT-US7 audit trail.
 - `LowStockProductDto` — read-only DTO for the low-stock report (CAT-US9/US10): id, productCode, description, availabilityCount (0 if null), minStockThreshold.
 - `CatalogueMetadata` — singleton row (id=1) recording when the catalogue was initialized (CAT-US1).
-- `Order` → M:1 User (merchant), 1:M OrderItem. Snapshots grossTotal, fixedDiscountAmount, flexibleCreditApplied, totalDue at placement.
+- `Order` → M:1 User (merchant), 1:M OrderItem. Snapshots grossTotal, fixedDiscountAmount, flexibleCreditApplied, totalDue at placement. Status lifecycle: ACCEPTED → PROCESSING → DISPATCHED (forward-only) + CANCELLED branch. Legacy PENDING/CONFIRMED kept with @Deprecated.
 - `OrderItem` → M:1 Order, M:1 Product. Snapshots unitPriceAtOrder.
 - `MonthlyRebateSettlement` — M:1 User. Records month-close rebate calculations. Unique constraint on (merchant_id, settlement_year_month).
 - `ProductDeletionLog` — Audit trail for product deletions (CAT-US3): snapshots productId, productCode, description, deletedBy (User), deletedAt.
@@ -108,7 +108,8 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 | `/api/products/search` | GET | Authenticated (CAT-US5/US6) |
 | `/api/products/{id}` | PUT, DELETE | ADMIN |
 | `/api/products/{id}/deliveries` | POST | ADMIN (CAT-US7, also `@PreAuthorize`) |
-| `/api/orders` | GET, POST | Authenticated |
+| `/api/orders` | GET, POST | Authenticated (GET is role-scoped: MERCHANT own orders only) |
+| `/api/orders/{id}/status` | PUT | MANAGER, ADMIN (ORD-US2 lifecycle transitions) |
 | `/api/reports/low-stock` | GET | MANAGER, ADMIN (CAT-US10 real-time low-stock report) |
 
 ### Frontend Structure (`frontend/src/`)
@@ -130,7 +131,7 @@ No router library — uses simple `currentPage` state in App.jsx.
 
 **Route → Component mapping** (in `App.jsx`):
 - `catalogue` → `Catalogue.jsx` — product listing table with role-aware columns; ADMIN tools: init, create, edit (with minStockThreshold), delete (Yes/No modal), "+ Stock" delivery modal (CAT-US7); low-stock warning in table (CAT-US8/US9).
-- `order` → `OrderForm.jsx` — place orders with discount breakdown display; stock availability masked for MERCHANT.
+- `order` → `OrderForm.jsx` — multi-line order placement with discount breakdown; orders tracking table ("My Orders" for MERCHANT, "All Orders" for staff) with status badges, staff action buttons, and 15s auto-polling (ORD-US1/US2).
 - `reporting` → `ReportingPlaceholder.jsx` — low-stock report table (CAT-US10) + planned RPT-US1–5 stubs.
 - `accounts` → `MerchantCreate.jsx` — admin form for atomic merchant+profile creation.
 - `merchants` → `MerchantManagement.jsx` — edit profiles, standing transitions, month-close settlement.
@@ -155,7 +156,8 @@ No router library — uses simple `currentPage` state in App.jsx.
 | `updateMerchantProfile(userId, data)` | PUT | `/api/merchant-profiles/{userId}` |
 | `closeMonth(yearMonth, settlementMode)` | POST | `/api/merchant-profiles/close-month` |
 | `placeOrder(merchantId, items)` | POST | `/api/orders` |
-| `getOrders()` | GET | `/api/orders` |
+| `getOrders()` | GET | `/api/orders` (role-scoped by backend) |
+| `updateOrderStatus(orderId, status)` | PUT | `/api/orders/{id}/status` |
 
 ---
 
@@ -210,13 +212,15 @@ A persistent low-stock warning banner is displayed below the navigation bar for 
 
 ## Tests
 
-70 tests total across 3 test classes. Test profile uses H2 in-memory DB with bootstrap disabled (`application-test.properties`).
+83 tests total across 4 test classes. Test profile uses H2 in-memory DB with bootstrap disabled (`application-test.properties`).
 
 | Test Class | Tests | Coverage |
 |------------|-------|---------|
 | `com/ipos/cat/CatalogueCatTest.java` | 31 Mockito unit tests | CAT-US2–US10: product CRUD, search, stock masking, delivery recording, threshold validation, audit logging, low-stock query |
 | `com/ipos/cat/ProductControllerCatalogueCatWebMvcTest.java` | 15 WebMvc slice tests | DTO validation (400), success paths (200/201/204), role enforcement (403), CAT-US5/US6/US7/US8 |
 | `com/ipos/cat/ReportControllerWebMvcTest.java` | 4 WebMvc slice tests | CAT-US10: MANAGER 200, ADMIN 200, MERCHANT 403, unauthenticated 401 |
+| `com/ipos/ord/ORDOrderTest.java` | 8 Mockito unit tests | ORD-US1: placeOrder ACCEPTED status, empty/null items rejection; ORD-US2: findOrdersForActor scoping, updateOrderStatus transitions |
+| `com/ipos/ord/OrderControllerWebMvcTest.java` | 5 WebMvc slice tests | ORD-US2: GET /api/orders role-scoped, PUT status RBAC (MANAGER 200, MERCHANT 403, unauth 401) |
 | `com/ipos/service/MerchantAccountServiceTest.java` | 20 Mockito unit tests | ACC-US1 merchant creation, tier validation, discount calculations, standing guards, credit limits, ORD-US1 merchant isolation |
 
 There are no frontend tests.
@@ -225,14 +229,15 @@ There are no frontend tests.
 
 ## User Story Backlog (What's Left)
 
-Full status in `ACCprogress.txt` (ACC — complete) and `CATprogress.txt` (CAT).
+Full status in `ACCprogress.txt` (ACC — complete), `CATprogress.txt` (CAT), and `ORDprogress.txt` (ORD — in progress).
 
 **CAT (Catalogue & Inventory):**
 - **CAT-US2–US10**: Complete. US9 persistent low-stock banner for ADMIN; US10 real-time low-stock report at `/api/reports/low-stock`.
 - **CAT-US1**: Partial — catalogue initialization endpoint exists but is not enforced as a prerequisite before adding products.
 
 **ORD (Orders):**
-- `GET /api/orders` returns all orders regardless of caller role — merchant-scoped listing not implemented.
+- **ORD-US1/US2/US4**: Complete. Multi-line order placement with ACCEPTED status; role-scoped order listing; staff status update lifecycle (ACCEPTED/PROCESSING/DISPATCHED/CANCELLED); frontend tracking table with polling.
+- **ORD-US3/US5/US6**: Not started (Invoice and Payment entities required).
 
 ---
 
@@ -253,3 +258,4 @@ Set `ipos.bootstrap.enabled=false` once real accounts exist.
 - `RBAC.md` — Full RBAC architecture and role/permission matrix
 - `ACCprogress.txt` — ACC epic user story status (all complete)
 - `CATprogress.txt` — CAT epic user story status (US2–US10 complete; US1 partial)
+- `ORDprogress.txt` — ORD epic user stories (verbatim) and implementation status (ORD-US1–US6)

@@ -1,0 +1,378 @@
+================================================================================
+ IPOS-SA-ORD — Order Fulfillment and Financial Tracking — Progress Report
+================================================================================
+
+Generated     : 2026-04-03
+Last updated  : 2026-04-06
+Epic          : Order Fulfillment and Financial Tracking
+Companion docs: ACCprogress.txt (Account Management — complete)
+                 CATprogress.txt (Catalogue & Inventory)
+Source stories : userstories.txt — Epic: Order Fulfillment and Financial Tracking
+
+This document maps each ORD user story (US1-US6) to the current codebase,
+states what is DONE vs NOT DONE, and notes remaining gaps. File paths are
+relative to the project root unless noted.
+
+For the **verbatim** text of every user story (single source of truth for
+acceptance criteria wording), see section 4 below.
+
+
+================================================================================
+ 1. EPIC SUMMARY
+================================================================================
+
+Goal (from your epic description in userstories.txt):
+  This epic enables merchants to place and track orders while providing
+  InfoPharma with the tools to manage stock reduction, invoice generation
+  and payment recording.
+
+Current state (high level):
+  - ORD-US1 COMPLETE: POST /api/orders -> OrderService.placeOrder()
+    (transactional stock decrement, price snapshot, FIXED/FLEXIBLE discounts,
+    credit limit). Merchant isolation enforced at service layer. New orders
+    are created with status ACCEPTED (aligned with brief wording).
+    Frontend supports multi-line item selection. Empty items rejected
+    with 400.
+  - ORD-US2 COMPLETE: GET /api/orders returns role-scoped results
+    (MERCHANT sees own orders only; MANAGER/ADMIN see all).
+    PUT /api/orders/{id}/status allows MANAGER/ADMIN to advance the
+    lifecycle: ACCEPTED -> PROCESSING -> DISPATCHED, with cancellation from
+    ACCEPTED or PROCESSING. Frontend shows "My Orders" / "All Orders" table
+    with status badges, staff action buttons, and 15-second auto-polling.
+  - Order status enum: ACCEPTED, PROCESSING, DISPATCHED, CANCELLED
+    (legacy PENDING/CONFIRMED kept with @Deprecated for DB compatibility;
+    migration SQL documented in Order.java).
+  - Stock is decremented atomically during order placement (status is
+    ACCEPTED at save time), satisfying ORD-US4 criterion that stock decrements
+    happen when status reaches "Accepted".
+  - No Invoice or Payment entities exist -- ORD-US3 (balance),
+    ORD-US5 (invoice generation), and ORD-US6 (payment recording)
+    are not implemented.
+  - Frontend: OrderForm.jsx supports multi-line order placement with
+    add/remove item rows, an orders tracking table with role-based columns,
+    staff status controls, and auto-refresh polling.
+
+
+================================================================================
+ 2. REFERENCE — KEY FILES (ORD-RELATED)
+================================================================================
+
+Backend
+  entity/Order.java
+    Fields: id, merchant (User FK), status (OrderStatus: ACCEPTED, PROCESSING,
+            DISPATCHED, CANCELLED + deprecated PENDING, CONFIRMED),
+            placedAt, grossTotal, fixedDiscountAmount,
+            flexibleCreditApplied, totalDue, items (OneToMany OrderItem).
+
+  entity/OrderItem.java
+    Fields: order, product, quantity, unitPriceAtOrder (snapshot).
+
+  repository/OrderRepository.java
+    Includes aggregate query for credit exposure (sum totalDue by merchant,
+    excluding CANCELLED).
+    findByMerchant_IdOrderByPlacedAtDesc() — merchant-scoped listing.
+    findAllByOrderByPlacedAtDesc() — staff listing (all orders).
+
+  service/OrderService.java
+    placeOrder(merchantId, items, callerUserId, callerRole) — ORD-US1
+      isolation, standing guard, stock check + decrement, discounts,
+      credit limit, save order. Sets status ACCEPTED. Rejects empty items.
+    findOrdersForActor(callerUserId, callerRole) — ORD-US2 role-scoped.
+    updateOrderStatus(orderId, newStatus) — ORD-US2 lifecycle transitions.
+
+  controller/OrderController.java
+    GET  /api/orders            Role-scoped listing (ORD-US2)
+    POST /api/orders            Place a new order (ORD-US1)
+    PUT  /api/orders/{id}/status  Update status (ORD-US2, MANAGER/ADMIN)
+
+  security/SecurityConfig.java
+    PUT /api/orders/*/status   -> hasAnyRole("MANAGER", "ADMIN")
+    /api/orders/**             -> authenticated (all roles)
+    @PreAuthorize on updateStatus() as defence-in-depth.
+
+Frontend
+  src/OrderForm.jsx
+    Multi-line order form with add/remove item rows (ORD-US1).
+    Orders tracking table: "My Orders" (MERCHANT) / "All Orders" (staff).
+    Staff status action buttons (ORD-US2). 15s auto-polling + Refresh.
+
+  src/api.js
+    placeOrder(merchantId, items), getOrders(), updateOrderStatus(orderId, status)
+
+Tests
+  backend/src/test/java/com/ipos/ord/ORDOrderTest.java
+    8 Mockito unit tests: placeOrder ACCEPTED status, empty/null items
+    rejection, findOrdersForActor scoping, updateOrderStatus transitions.
+    5 WebMvc tests (OrderControllerWebMvcTest): GET scoped, PUT RBAC.
+
+
+================================================================================
+ 3. USER STORY STATUS MATRIX
+================================================================================
+
+  US1  Placing a New Order              DONE (auth + multi-line items + save
+                                          with ACCEPTED status + frontend
+                                          multi-line form + empty-items
+                                          validation)
+  US2  Real-time Order Tracking         DONE (merchant-scoped GET, status
+                                          lifecycle ACCEPTED/PROCESSING/
+                                          DISPATCHED/CANCELLED, staff PUT
+                                          endpoint, frontend tracking table
+                                          with polling + Refresh)
+  US3  Financial Balance Oversight     NOT STARTED (no invoices; no payment-
+                                          due elapsed time)
+  US4  Automated Stock Reduction       DONE (stock decremented atomically at
+                                          placement when status is ACCEPTED)
+  US5  Automated Invoice Generation    NOT STARTED (no Invoice entity)
+  US6  Recording Merchant Payments     NOT STARTED (no Payment entity)
+
+
+================================================================================
+ 4. VERBATIM USER STORIES (SOURCE OF TRUTH — from userstories.txt)
+================================================================================
+
+The following block is copied **in full** from `userstories.txt` (Order
+Fulfillment epic only). Do not paraphrase acceptance criteria when marking
+work; refer to this section.
+
+
+Epic: Order Fulfillment and Financial Tracking
+Description: This epic enables merchants to place and track orders while providing InfoPharma with 
+the tools to manage stock reduction, invoice generation and payment recording. 
+User Story 1: Placing a New Order
+- Title: As a Merchant, I want to place an order by selecting items from the current catalogue so 
+that I can restock my pharmacy. 
+- Description: Dependency: Requires integration with the catalogue (IPOS-SA-CAT).
+- Acceptance Criteria:
+o The system must verify the merchant is authorized and authenticated before allowing 
+order entry (That they have a Merchant Account). 
+o The merchant must be able to select one or multiple items and specify valid quantities. 
+o Upon submission, the order must be successfully recorded in the database with an 
+initial status (e.g "Accepted").
+User Story 2: Real-time Order Tracking
+- Title: As a Merchant, I want to track the progress of my submitted orders so that I can monitor 
+when they are processed or dispatched. 
+- Acceptance Criteria:
+o The merchant must see a list of their orders with current statuses (e.g "Accepted" 
+"Processing" "Dispatched").
+o Status updates must be reflected in the UI as they are updated by staff or automated 
+processes.
+User Story 3: Financial Balance Oversight
+- Title: As a Merchant, I want to view my current outstanding balance so that I know the total 
+amount I need to repay InfoPharma. 
+- Acceptance Criteria:
+o The system must display a read-only total of all unpaid invoices for the merchant. 
+o The balance must automatically update when new invoices are raised or payments are 
+recorded.
+o The system must display amount of time elapsed since payment has been due.
+User Story 4: Automated Stock Reduction
+- Title: As a Merchant, I want the system to automatically reduce product availability upon 
+order acceptance so that I do not accidentally order items that have already been sold to 
+others.
+- Description: This story ensures the inventory data remains synchronized with successful sales 
+transactions without manual intervention.
+- Acceptance Criteria:
+o Stock levels for specific items must be decremented only after the order status moves 
+to "Accepted" 
+o The reduction quantity must exactly match the quantity specified in the accepted 
+order. 
+User Story 5: Automated Invoice Generation
+- Title: As an Administrator, I want the system to generate an invoice for every accepted order 
+so that billing and payments can be tracked. 
+- Acceptance Criteria:
+o The system must automatically generate an invoice once an order is marked as 
+"Accepted" 
+o The invoice must include Merchant contact details, order items, VAT number, and final 
+total values.
+o Invoices must be stored in the system database for future reference. 
+User Story 6: Recording Merchant Payments
+- Title: As an Administrator, I want to manually record payments against existing invoices so that 
+outstanding balances are kept up to date. 
+- Acceptance Criteria:
+o The user must be able to record payments made via Bank Transfer, Card or Check. 
+o The system must update the merchant's outstanding balance immediately upon saving 
+the payment.
+
+
+================================================================================
+ 5. DETAILED USER STORY BREAKDOWN
+================================================================================
+
+------------------------------------------------------------------------------
+ ORD-US1 — Placing a New Order
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 1.
+
+STATUS: DONE
+
+DONE:
+  - Session authentication required for /api/orders/** (SecurityConfig).
+  - Merchant must have a MerchantProfile (validated in OrderService); standing
+    must be NORMAL to place orders.
+  - ORD-US1 isolation: if caller role is MERCHANT, merchantId is forced to
+    the caller's user ID (OrderService.placeOrder).
+  - Multiple line items supported in both API and frontend UI.
+  - Frontend OrderForm.jsx: dynamic add/remove item rows, product dropdown
+    with stock labels, quantity inputs, minimum one line enforced.
+  - Order persisted with line items and financial snapshot (totalDue, etc.).
+  - Initial status set to ACCEPTED (matching the brief "e.g. Accepted").
+  - Empty items list rejected with HTTP 400.
+
+MIGRATION NOTE:
+  Legacy orders may have PENDING or CONFIRMED status from before the enum
+  update. Run this SQL once on existing databases:
+    UPDATE orders SET status = 'ACCEPTED' WHERE status IN ('PENDING','CONFIRMED');
+
+
+------------------------------------------------------------------------------
+ ORD-US2 — Real-time Order Tracking
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 2.
+
+STATUS: DONE
+
+DONE:
+  - GET /api/orders returns role-scoped results:
+    MERCHANT: own orders only (via findByMerchant_IdOrderByPlacedAtDesc).
+    MANAGER/ADMIN: all orders (via findAllByOrderByPlacedAtDesc).
+  - Order status lifecycle: ACCEPTED -> PROCESSING -> DISPATCHED (forward),
+    ACCEPTED | PROCESSING -> CANCELLED (cancellation branch).
+    DISPATCHED and CANCELLED are terminal states.
+  - PUT /api/orders/{id}/status: MANAGER/ADMIN only (SecurityConfig URL rule
+    + @PreAuthorize defence-in-depth). Validates transitions in OrderService.
+  - Frontend OrderForm.jsx: orders table shows Order #, Date, Items summary,
+    Total Due, and Status with colour-coded badges.
+    MERCHANT sees "My Orders"; MANAGER/ADMIN see "All Orders" + merchant
+    column + status action buttons (Processing, Dispatched, Cancelled).
+  - Auto-polling: orders table refreshes every 15 seconds via setInterval.
+  - Manual Refresh button for on-demand updates.
+  - Status display mapping: ACCEPTED -> "Accepted", PROCESSING -> "Processing",
+    DISPATCHED -> "Dispatched", CANCELLED -> "Cancelled". Legacy PENDING and
+    CONFIRMED map to "Accepted" for display.
+
+NOTE ON "REAL-TIME":
+  WebSocket push is out of scope for this prototype. Polling every 15 seconds
+  provides sufficient responsiveness for the tracking use case.
+
+
+------------------------------------------------------------------------------
+ ORD-US3 — Financial Balance Oversight
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 3.
+
+STATUS: NOT STARTED
+
+DONE:
+  - Credit exposure logic uses sum of order totalDue (excluding CANCELLED) —
+    related to "money owed" but not "unpaid invoices".
+
+GAPS / REMAINING:
+  - No Invoice model — cannot show "total of unpaid invoices".
+  - No payment recording — balance cannot update from payments.
+  - No "time elapsed since payment due" without invoice due dates.
+
+
+------------------------------------------------------------------------------
+ ORD-US4 — Automated Stock Reduction
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 4.
+
+STATUS: DONE
+
+DONE:
+  - Stock is reduced atomically with order placement; quantity matches
+    line items when the order succeeds (validation rejects insufficient stock).
+  - Order status is set to ACCEPTED at save time, so stock decrement happens
+    precisely when the order reaches "Accepted" status — satisfying the
+    acceptance criterion "Stock levels must be decremented only after the
+    order status moves to Accepted".
+
+NOTE:
+  If orders could be cancelled after placement, stock restoration would be
+  needed. This is not covered in the current implementation scope.
+
+
+------------------------------------------------------------------------------
+ ORD-US5 — Automated Invoice Generation
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 5.
+
+STATUS: NOT STARTED
+
+DONE:
+  - None — no invoice entity, no generation on status change.
+
+GAPS / REMAINING:
+  - Design Invoice entity (or document), link to Order, store VAT and line
+    details, ADMIN visibility, generation trigger when order accepted.
+
+
+------------------------------------------------------------------------------
+ ORD-US6 — Recording Merchant Payments
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 6.
+
+STATUS: NOT STARTED
+
+DONE:
+  - None — no payment entity or admin UI.
+
+GAPS / REMAINING:
+  - Payment model: method enum (Bank Transfer, Card, Check), amount,
+    invoice/order reference, timestamp; update outstanding balance logic
+    together with ORD-US3 / ORD-US5.
+
+
+================================================================================
+ 6. TESTING COVERAGE (ORD)
+================================================================================
+
+  ORD tests live in backend/src/test/java/com/ipos/ord/ORDOrderTest.java.
+
+  ORDOrderTest (8 Mockito unit tests):
+    - ORD-US1: placeOrder sets status to ACCEPTED
+    - ORD-US1: placeOrder rejects empty items list
+    - ORD-US1: placeOrder rejects null items list
+    - ORD-US2: findOrdersForActor(MERCHANT) queries only merchant's orders
+    - ORD-US2: findOrdersForActor(ADMIN) returns all orders
+    - ORD-US2: updateOrderStatus ACCEPTED -> PROCESSING succeeds
+    - ORD-US2: updateOrderStatus DISPATCHED -> PROCESSING rejected
+    - ORD-US2: updateOrderStatus on non-existent order throws 404
+
+  OrderControllerWebMvcTest (5 WebMvc slice tests):
+    - GET /api/orders as MERCHANT -> 200 (calls scoped service method)
+    - GET /api/orders as ADMIN -> 200 (calls all-orders service method)
+    - PUT /api/orders/1/status as MANAGER -> 200
+    - PUT /api/orders/1/status as MERCHANT -> 403
+    - PUT /api/orders/1/status unauthenticated -> 401
+
+  ORD-US1 merchant isolation and discount math are also tested in
+  MerchantAccountServiceTest (20 tests).
+
+
+================================================================================
+ 7. CROSS-PACKAGE NOTES
+================================================================================
+
+  - IPOS-SA-CAT product availability is decremented by OrderService;
+    restocked via ProductService.recordStockDelivery — inventory consistency
+    depends on order cancellation rules once implemented.
+
+  - ACC merchant profiles (credit limit, discounts, standing) are inputs to
+    OrderService.placeOrder — ORD work should keep MerchantProfile and
+    Order totals consistent when invoices/payments are added later.
+
+  - SQL MIGRATION for existing databases: legacy orders with PENDING or
+    CONFIRMED status should be migrated to ACCEPTED:
+    UPDATE orders SET status = 'ACCEPTED' WHERE status IN ('PENDING','CONFIRMED');
+
+
+================================================================================
+ END OF ORD PROGRESS REPORT
+================================================================================

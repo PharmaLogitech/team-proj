@@ -87,7 +87,8 @@ A malicious site can trigger the browser to send cookies automatically, but it *
 | `/api/users/**` | ALL | ADMIN | Staff user management (IPOS-SA-ACC) |
 | `/api/products/**` | GET | Authenticated | Catalogue browsing (all roles) |
 | `/api/products/**` | POST/PUT/DELETE | ADMIN | Catalogue management |
-| `/api/orders/**` | ALL | Authenticated | Order operations (ORD-US1 enforced in service) |
+| `/api/orders` | GET/POST | Authenticated | GET: role-scoped (MERCHANT own orders; staff all). POST: place order (ORD-US1) |
+| `/api/orders/{id}/status` | PUT | MANAGER or ADMIN | Order status lifecycle transitions (ORD-US2) |
 | `/api/reports/**` | ALL | MANAGER or ADMIN | Reporting (IPOS-SA-RPRT) |
 
 ### Password Storage
@@ -196,13 +197,12 @@ High-level checklist; **detailed** status is in **`ACCprogress.txt`** (ACC) and 
 - [ ] CAT-US10: Low-Stock Reporting (under IPOS-SA-RPRT)
 
 ### Orders & Fulfillment (IPOS-SA-ORD)
-- [x] ORD-US1: Merchants **placing** orders are restricted to their own `merchantId` (`POST` / service)
-- [ ] ORD-US1b (gap): `GET /api/orders` is not merchant-scoped — all roles receive the full list today
-- [ ] ORD-US2: Real-time Order Tracking
-- [ ] ORD-US3: Financial Balance Oversight
-- [ ] ORD-US4: Stock reduction on "Accepted" status (not on placement)
-- [ ] ORD-US5: Automated Invoice Generation
-- [ ] ORD-US6: Recording Merchant Payments
+- [x] ORD-US1: Multi-line order placement, ACCEPTED status, merchant isolation, empty-items validation
+- [x] ORD-US2: Role-scoped GET (MERCHANT own orders; staff all), PUT status lifecycle (ACCEPTED/PROCESSING/DISPATCHED/CANCELLED), frontend tracking table with polling
+- [ ] ORD-US3: Financial Balance Oversight (requires Invoice entity)
+- [x] ORD-US4: Stock decremented atomically at placement when status is ACCEPTED
+- [ ] ORD-US5: Automated Invoice Generation (requires Invoice entity)
+- [ ] ORD-US6: Recording Merchant Payments (requires Payment entity)
 
 ### Reporting (IPOS-SA-RPRT)
 - [ ] RPT-US1: Sales Turnover Reporting
