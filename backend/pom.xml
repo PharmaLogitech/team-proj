@@ -130,6 +130,16 @@
         </dependency>
 
         <!--
+            junit-platform-suite
+            Enables @Suite / @SelectClasses in IposTestSuite (batch run for the Implementation Report).
+        -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-suite</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
             spring-security-test
             Provides test utilities for Spring Security: @WithMockUser,
             SecurityMockMvcRequestPostProcessors (csrf(), user()), and
