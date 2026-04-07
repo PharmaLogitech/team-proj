@@ -409,3 +409,63 @@ export async function updateOrderStatus(orderId, status) {
 
   return data;
 }
+
+/* ── Invoices (ORD-US5) ────────────────────────────────────────────────── */
+
+/**
+ * Fetch invoices (role-scoped by backend).
+ * MERCHANT sees own invoices; MANAGER/ADMIN see all.
+ */
+export async function getInvoices() {
+  const response = await fetchWithAuth(`${API_BASE}/invoices`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch invoices");
+  }
+  return response.json();
+}
+
+/**
+ * Fetch a single invoice by ID (with lines and payment details).
+ */
+export async function getInvoiceDetail(invoiceId) {
+  const response = await fetchWithAuth(`${API_BASE}/invoices/${invoiceId}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch invoice detail");
+  }
+  return response.json();
+}
+
+/* ── Payments (ORD-US6) ────────────────────────────────────────────────── */
+
+/**
+ * Record a payment against an invoice.
+ * POST /api/invoices/{id}/payments. ADMIN only.
+ */
+export async function recordPayment(invoiceId, amount, method) {
+  const response = await fetchWithAuth(`${API_BASE}/invoices/${invoiceId}/payments`, {
+    method: "POST",
+    body: JSON.stringify({ amount, method }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to record payment");
+  }
+
+  return data;
+}
+
+/* ── Merchant Financials (ORD-US3) ─────────────────────────────────────── */
+
+/**
+ * Fetch the logged-in merchant's outstanding balance.
+ * GET /api/merchant-financials/balance. MERCHANT only.
+ */
+export async function getMerchantBalance() {
+  const response = await fetchWithAuth(`${API_BASE}/merchant-financials/balance`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch balance");
+  }
+  return response.json();
+}

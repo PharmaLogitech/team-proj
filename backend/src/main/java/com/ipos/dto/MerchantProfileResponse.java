@@ -33,7 +33,9 @@ public record MerchantProfileResponse(
         String standing,
         Instant inDefaultSince,
         BigDecimal flexibleDiscountCredit,
-        BigDecimal chequeRebatePending
+        BigDecimal chequeRebatePending,
+        String vatRegistrationNumber,
+        int paymentTermsDays
 ) {
 
     /*
@@ -56,7 +58,9 @@ public record MerchantProfileResponse(
                 profile.getStanding().name(),
                 profile.getInDefaultSince(),
                 profile.getFlexibleDiscountCredit(),
-                profile.getChequeRebatePending()
+                profile.getChequeRebatePending(),
+                profile.getVatRegistrationNumber(),
+                profile.getPaymentTermsDays()
         );
     }
 }

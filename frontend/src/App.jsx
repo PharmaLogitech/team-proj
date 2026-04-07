@@ -45,6 +45,7 @@ import OrderForm from "./OrderForm.jsx";
 import ReportingPlaceholder from "./ReportingPlaceholder.jsx";
 import MerchantCreate from "./MerchantCreate.jsx";
 import MerchantManagement from "./MerchantManagement.jsx";
+import Invoices from "./Invoices.jsx";
 
 /*
  * ── NAV_LABELS ───────────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ import MerchantManagement from "./MerchantManagement.jsx";
 const NAV_LABELS = {
   catalogue: "Catalogue",
   order: "Place Order",
+  invoices: "Invoices",
   reporting: "Reporting",
   accounts: "Accounts",
   merchants: "Merchants",
@@ -76,6 +78,7 @@ const PAGE_COMPONENTS = {
       currentUser={props.currentUser}
     />
   ),
+  invoices: () => <Invoices />,
   reporting: () => <ReportingPlaceholder />,
   accounts: () => <MerchantCreate />,
   merchants: () => <MerchantManagement />,

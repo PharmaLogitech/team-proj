@@ -89,6 +89,10 @@ A malicious site can trigger the browser to send cookies automatically, but it *
 | `/api/products/**` | POST/PUT/DELETE | ADMIN | Catalogue management |
 | `/api/orders` | GET/POST | Authenticated | GET: role-scoped (MERCHANT own orders; staff all). POST: place order (ORD-US1) |
 | `/api/orders/{id}/status` | PUT | MANAGER or ADMIN | Order status lifecycle transitions (ORD-US2) |
+| `/api/invoices` | GET | Authenticated | Invoice listing: MERCHANT own; staff all (ORD-US5) |
+| `/api/invoices/{id}` | GET | Authenticated | Invoice detail + lines (ORD-US5); MERCHANT own only |
+| `/api/invoices/{id}/payments` | POST | ADMIN | Record payment against invoice (ORD-US6) |
+| `/api/merchant-financials/balance` | GET | MERCHANT | Outstanding balance + due elapsed (ORD-US3) |
 | `/api/reports/**` | ALL | MANAGER or ADMIN | Reporting (IPOS-SA-RPRT) |
 
 ### Password Storage
@@ -199,10 +203,10 @@ High-level checklist; **detailed** status is in **`ACCprogress.txt`** (ACC) and 
 ### Orders & Fulfillment (IPOS-SA-ORD)
 - [x] ORD-US1: Multi-line order placement, ACCEPTED status, merchant isolation, empty-items validation
 - [x] ORD-US2: Role-scoped GET (MERCHANT own orders; staff all), PUT status lifecycle (ACCEPTED/PROCESSING/DISPATCHED/CANCELLED), frontend tracking table with polling
-- [ ] ORD-US3: Financial Balance Oversight (requires Invoice entity)
+- [x] ORD-US3: Financial Balance Oversight — MERCHANT GET /api/merchant-financials/balance returns derived outstanding total + days elapsed since oldest unpaid due date
 - [x] ORD-US4: Stock decremented atomically at placement when status is ACCEPTED
-- [ ] ORD-US5: Automated Invoice Generation (requires Invoice entity)
-- [ ] ORD-US6: Recording Merchant Payments (requires Payment entity)
+- [x] ORD-US5: Automated Invoice Generation — Invoice + InvoiceLine entities, auto-generated at order placement, merchant/VAT/items snapshot, INV-YYYY-NNNNN numbering, role-scoped listing + detail
+- [x] ORD-US6: Recording Merchant Payments — Payment entity (BANK_TRANSFER/CARD/CHEQUE), POST /api/invoices/{id}/payments ADMIN only, amount validation against outstanding
 
 ### Reporting (IPOS-SA-RPRT)
 - [ ] RPT-US1: Sales Turnover Reporting

@@ -39,17 +39,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findAllByOrderByPlacedAtDesc();
 
     /*
-     * ── CREDIT LIMIT CHECK ──────────────────────────────────────────────────
+     * ── CREDIT LIMIT CHECK (gross component) ───────────────────────────────
      *
      * Returns the sum of totalDue for all non-cancelled orders belonging to
-     * a merchant.  Used by OrderService to verify that placing a new order
-     * would not exceed the merchant's credit limit.
+     * a merchant.  OrderService subtracts InvoiceRepository.sumPaymentsByMerchantId
+     * to obtain net exposure before comparing to creditLimit (ORD-US6).
      *
      * COALESCE ensures we get 0 (not null) when the merchant has no orders.
-     *
-     * ASSUMPTION: "outstanding exposure" = sum of totalDue across all
-     * non-cancelled orders.  A more sophisticated system would subtract
-     * payments received, but payment tracking is out of scope for now.
      */
     @Query("SELECT COALESCE(SUM(o.totalDue), 0) FROM Order o " +
            "WHERE o.merchant.id = :merchantId AND o.status <> :excludeStatus")

@@ -138,6 +138,8 @@ public class DataBootstrap implements ApplicationRunner {
                     profile.setStanding(MerchantStanding.NORMAL);
                     profile.setFlexibleDiscountCredit(BigDecimal.ZERO);
                     profile.setChequeRebatePending(BigDecimal.ZERO);
+                    profile.setVatRegistrationNumber("GB123456789");
+                    profile.setPaymentTermsDays(30);
                     profileRepository.save(profile);
                     System.out.println("[Bootstrap] Created merchant profile for: " + username
                             + " (credit: £10,000, plan: FIXED 5%)");

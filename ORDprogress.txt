@@ -3,7 +3,7 @@
 ================================================================================
 
 Generated     : 2026-04-03
-Last updated  : 2026-04-06
+Last updated  : 2026-04-07
 Epic          : Order Fulfillment and Financial Tracking
 Companion docs: ACCprogress.txt (Account Management — complete)
                  CATprogress.txt (Catalogue & Inventory)
@@ -45,12 +45,30 @@ Current state (high level):
   - Stock is decremented atomically during order placement (status is
     ACCEPTED at save time), satisfying ORD-US4 criterion that stock decrements
     happen when status reaches "Accepted".
-  - No Invoice or Payment entities exist -- ORD-US3 (balance),
-    ORD-US5 (invoice generation), and ORD-US6 (payment recording)
-    are not implemented.
+  - ORD-US5 COMPLETE: Invoice entity with InvoiceLine children, auto-generated
+    in the same @Transactional boundary as order placement. Invoices snapshot
+    merchant contact details, VAT number, order items, and financial totals.
+    Human-readable invoice number (INV-YYYY-NNNNN). 1:1 with Order (unique FK).
+    Frontend Invoices page shows role-scoped listing and invoice detail view.
+  - ORD-US6 COMPLETE: Payment entity with method enum (BANK_TRANSFER, CARD,
+    CHEQUE). POST /api/invoices/{id}/payments (ADMIN only) records payments
+    against invoices with amount validation (must not exceed outstanding).
+    Frontend admin payment recording form on Invoices page.
+  - ORD-US3 COMPLETE: GET /api/merchant-financials/balance (MERCHANT only)
+    returns outstanding total (sum invoices - sum payments), currency, oldest
+    unpaid due date, and days elapsed since due. Balance is derived (no stored
+    field) so it auto-updates when invoices or payments change.
+    Frontend balance card on Invoices page for MERCHANT users.
+  - MerchantProfile extended with vatRegistrationNumber and paymentTermsDays
+    (default 30). Invoice dueDate = issuedAt + paymentTermsDays.
+  - Credit limit check uses net exposure: sum(non-cancelled order totalDue)
+    minus sum(payments for that merchant), floored at zero, then plus the
+    new order's totalDue — aligned with recorded payments (ORD-US6).
   - Frontend: OrderForm.jsx supports multi-line order placement with
     add/remove item rows, an orders tracking table with role-based columns,
     staff status controls, and auto-refresh polling.
+  - Frontend: Invoices.jsx provides invoice list, detail view, balance summary,
+    and admin payment recording.
 
 
 ================================================================================
@@ -76,7 +94,8 @@ Backend
   service/OrderService.java
     placeOrder(merchantId, items, callerUserId, callerRole) — ORD-US1
       isolation, standing guard, stock check + decrement, discounts,
-      credit limit, save order. Sets status ACCEPTED. Rejects empty items.
+      credit limit (net of invoice payments via InvoiceRepository),
+      save order. Sets status ACCEPTED. Rejects empty items.
     findOrdersForActor(callerUserId, callerRole) — ORD-US2 role-scoped.
     updateOrderStatus(orderId, newStatus) — ORD-US2 lifecycle transitions.
 
@@ -86,9 +105,51 @@ Backend
     PUT  /api/orders/{id}/status  Update status (ORD-US2, MANAGER/ADMIN)
 
   security/SecurityConfig.java
-    PUT /api/orders/*/status   -> hasAnyRole("MANAGER", "ADMIN")
-    /api/orders/**             -> authenticated (all roles)
-    @PreAuthorize on updateStatus() as defence-in-depth.
+    PUT /api/orders/*/status          -> hasAnyRole("MANAGER", "ADMIN")
+    /api/orders/**                    -> authenticated (all roles)
+    POST /api/invoices/*/payments     -> hasRole("ADMIN")
+    /api/invoices/**                  -> authenticated (all roles)
+    /api/merchant-financials/**       -> hasRole("MERCHANT")
+    @PreAuthorize on updateStatus(), recordPayment(), getBalance().
+
+  entity/Invoice.java
+    Fields: id, invoiceNumber (INV-YYYY-NNNNN), issuedAt, dueDate, order (1:1),
+            merchant, merchantName/Address/Email/Phone/Vat (snapshots),
+            grossTotal, fixedDiscountAmount, flexibleCreditApplied, totalDue,
+            lines (OneToMany InvoiceLine), payments (OneToMany Payment).
+
+  entity/InvoiceLine.java
+    Fields: invoice, lineNumber, productId, description, quantity, unitPrice,
+            lineTotal.
+
+  entity/Payment.java
+    Fields: invoice, amount, method (BANK_TRANSFER/CARD/CHEQUE), recordedAt,
+            recordedBy (User FK, ADMIN).
+
+  repository/InvoiceRepository.java
+    findByOrder_Id (idempotency), findByMerchant_Id... (scoped listing),
+    findAllByOrderByIssuedAtDesc, sumTotalDueByMerchantId,
+    sumPaymentsByMerchantId, countByInvoiceNumberPrefix.
+
+  repository/PaymentRepository.java
+    sumByInvoiceId (outstanding per invoice).
+
+  service/InvoiceService.java
+    generateForOrder(Order) — snapshot merchant details, build lines,
+    generate invoice number, idempotent via order_id unique FK.
+    Called from OrderService.placeOrder in same transaction.
+
+  service/PaymentService.java
+    recordPayment(invoiceId, amount, method, adminUsername) — validates
+    amount > 0 and <= outstanding, persists Payment.
+
+  controller/InvoiceController.java
+    GET  /api/invoices            Role-scoped listing (ORD-US5)
+    GET  /api/invoices/{id}       Invoice detail + lines (ORD-US5)
+    POST /api/invoices/{id}/payments  Record payment (ORD-US6, ADMIN)
+
+  controller/MerchantFinancialsController.java
+    GET  /api/merchant-financials/balance  Outstanding balance (ORD-US3)
 
 Frontend
   src/OrderForm.jsx
@@ -96,14 +157,32 @@ Frontend
     Orders tracking table: "My Orders" (MERCHANT) / "All Orders" (staff).
     Staff status action buttons (ORD-US2). 15s auto-polling + Refresh.
 
+  src/Invoices.jsx
+    Invoice listing (role-scoped). Invoice detail with line items.
+    MERCHANT balance summary card (ORD-US3). ADMIN payment recording
+    form (ORD-US6). Refresh button.
+
   src/api.js
-    placeOrder(merchantId, items), getOrders(), updateOrderStatus(orderId, status)
+    placeOrder(), getOrders(), updateOrderStatus(),
+    getInvoices(), getInvoiceDetail(), recordPayment(),
+    getMerchantBalance()
+
+  src/auth/rbac.js
+    Added "invoices" route under PACKAGE_ORD.
 
 Tests
   backend/src/test/java/com/ipos/ord/ORDOrderTest.java
     8 Mockito unit tests: placeOrder ACCEPTED status, empty/null items
     rejection, findOrdersForActor scoping, updateOrderStatus transitions.
     5 WebMvc tests (OrderControllerWebMvcTest): GET scoped, PUT RBAC.
+
+  backend/src/test/java/com/ipos/ord/ORDInvoicePaymentTest.java
+    4 Mockito unit tests (InvoiceServiceTest): merchant snapshot, idempotent,
+    lines match items, invoice number format.
+    3 Mockito unit tests (PaymentServiceTest): success, exceeds outstanding,
+    zero amount.
+    5 WebMvc tests (InvoicePaymentWebMvcTest): GET invoices as MERCHANT/ADMIN,
+    POST payment as ADMIN/MERCHANT (RBAC), GET balance as MERCHANT.
 
 
 ================================================================================
@@ -119,12 +198,21 @@ Tests
                                           DISPATCHED/CANCELLED, staff PUT
                                           endpoint, frontend tracking table
                                           with polling + Refresh)
-  US3  Financial Balance Oversight     NOT STARTED (no invoices; no payment-
-                                          due elapsed time)
+  US3  Financial Balance Oversight     DONE (derived outstanding total from
+                                          invoices - payments; oldest unpaid
+                                          due date + elapsed days; MERCHANT
+                                          GET endpoint + frontend card)
   US4  Automated Stock Reduction       DONE (stock decremented atomically at
                                           placement when status is ACCEPTED)
-  US5  Automated Invoice Generation    NOT STARTED (no Invoice entity)
-  US6  Recording Merchant Payments     NOT STARTED (no Payment entity)
+  US5  Automated Invoice Generation    DONE (Invoice + InvoiceLine entities;
+                                          auto-generated in placeOrder txn;
+                                          merchant/VAT/items snapshot;
+                                          INV-YYYY-NNNNN numbering;
+                                          role-scoped listing + detail)
+  US6  Recording Merchant Payments     DONE (Payment entity with method enum;
+                                          POST /api/invoices/{id}/payments
+                                          ADMIN only; amount validation;
+                                          frontend payment form)
 
 
 ================================================================================
@@ -218,6 +306,9 @@ DONE:
   - Order persisted with line items and financial snapshot (totalDue, etc.).
   - Initial status set to ACCEPTED (matching the brief "e.g. Accepted").
   - Empty items list rejected with HTTP 400.
+  - Credit limit: compares creditLimit to net exposure = sum(non-cancelled
+    order totalDue) minus sum(payments against that merchant's invoices),
+    plus this order's totalDue (payments align with ORD-US6).
 
 MIGRATION NOTE:
   Legacy orders may have PENDING or CONFIRMED status from before the enum
@@ -263,16 +354,20 @@ NOTE ON "REAL-TIME":
 
 Full story text: section 4 — User Story 3.
 
-STATUS: NOT STARTED
+STATUS: DONE
 
 DONE:
-  - Credit exposure logic uses sum of order totalDue (excluding CANCELLED) —
-    related to "money owed" but not "unpaid invoices".
-
-GAPS / REMAINING:
-  - No Invoice model — cannot show "total of unpaid invoices".
-  - No payment recording — balance cannot update from payments.
-  - No "time elapsed since payment due" without invoice due dates.
+  - GET /api/merchant-financials/balance (MERCHANT only, @PreAuthorize +
+    SecurityConfig hasRole("MERCHANT")).
+  - Returns BalanceResponse: outstandingTotal (sum invoices totalDue - sum
+    payments), currency ("GBP"), oldestUnpaidDueDate, daysElapsedSinceDue.
+  - Balance is DERIVED from Invoice + Payment tables — no stored balance
+    field — so it auto-updates when new invoices are raised or payments
+    recorded (satisfying the acceptance criterion).
+  - "Time elapsed since payment has been due" is computed from the oldest
+    unpaid invoice's dueDate (ChronoUnit.DAYS.between).
+  - Frontend: Invoices.jsx shows a balance summary card for MERCHANT users
+    with outstanding total, due date, and elapsed days.
 
 
 ------------------------------------------------------------------------------
@@ -302,14 +397,32 @@ NOTE:
 
 Full story text: section 4 — User Story 5.
 
-STATUS: NOT STARTED
+STATUS: DONE
 
 DONE:
-  - None — no invoice entity, no generation on status change.
-
-GAPS / REMAINING:
-  - Design Invoice entity (or document), link to Order, store VAT and line
-    details, ADMIN visibility, generation trigger when order accepted.
+  - Invoice entity (invoices table): id, invoiceNumber (INV-YYYY-NNNNN),
+    issuedAt, dueDate, order_id (unique 1:1), merchant_id, merchant snapshot
+    fields (name, address, email, phone, VAT), financial totals (grossTotal,
+    fixedDiscountAmount, flexibleCreditApplied, totalDue).
+  - InvoiceLine entity (invoice_lines table): lineNumber, productId,
+    description (snapshot), quantity, unitPrice, lineTotal.
+  - InvoiceService.generateForOrder(Order) called from OrderService.placeOrder
+    in the same @Transactional boundary — invoice is created when order
+    status is ACCEPTED (satisfying "automatically generate an invoice once
+    an order is marked as Accepted").
+  - Idempotent: unique order_id FK prevents duplicate invoices.
+  - Invoice number sequential per year: INV-YYYY-NNNNN.
+  - MerchantProfile extended with vatRegistrationNumber (nullable String)
+    and paymentTermsDays (default 30) for due date calculation.
+  - InvoiceController: GET /api/invoices (role-scoped listing),
+    GET /api/invoices/{id} (detail with lines, merchant isolation).
+  - Frontend Invoices.jsx: invoice list table, detail view with line items,
+    merchant contact info, VAT number, and financial totals.
+  - SecurityConfig: /api/invoices/** authenticated (all roles).
+  - DTOs updated: CreateMerchantAccountRequest, UpdateMerchantProfileRequest,
+    and MerchantProfileResponse now include vatRegistrationNumber and
+    paymentTermsDays.
+  - DataBootstrap seeds VAT and payment terms for demo merchant.
 
 
 ------------------------------------------------------------------------------
@@ -318,24 +431,32 @@ GAPS / REMAINING:
 
 Full story text: section 4 — User Story 6.
 
-STATUS: NOT STARTED
+STATUS: DONE
 
 DONE:
-  - None — no payment entity or admin UI.
-
-GAPS / REMAINING:
-  - Payment model: method enum (Bank Transfer, Card, Check), amount,
-    invoice/order reference, timestamp; update outstanding balance logic
-    together with ORD-US3 / ORD-US5.
+  - Payment entity (payments table): id, invoice_id (ManyToOne), amount,
+    method (BANK_TRANSFER, CARD, CHEQUE — matching the brief "Bank Transfer,
+    Card or Check"), recordedAt, recordedBy (User FK, ADMIN).
+  - PaymentService.recordPayment(invoiceId, amount, method, adminUsername):
+    validates amount > 0, validates amount <= outstanding (totalDue - paid),
+    persists Payment.
+  - POST /api/invoices/{id}/payments: ADMIN only (SecurityConfig URL rule +
+    @PreAuthorize("hasRole('ADMIN')") defence-in-depth).
+  - Outstanding balance updates immediately because it is derived from
+    invoices and payments — no manual balance field to update.
+  - Frontend Invoices.jsx: ADMIN sees "Record Payment" button per invoice,
+    payment form with amount input and method dropdown (Bank Transfer, Card,
+    Cheque), submit refreshes invoice list and balance.
+  - Existing payments displayed in invoice detail view.
 
 
 ================================================================================
  6. TESTING COVERAGE (ORD)
 ================================================================================
 
-  ORD tests live in backend/src/test/java/com/ipos/ord/ORDOrderTest.java.
+  ORD tests live in backend/src/test/java/com/ipos/ord/.
 
-  ORDOrderTest (8 Mockito unit tests):
+  ORDOrderTest.java — 9 Mockito unit tests:
     - ORD-US1: placeOrder sets status to ACCEPTED
     - ORD-US1: placeOrder rejects empty items list
     - ORD-US1: placeOrder rejects null items list
@@ -344,16 +465,38 @@ GAPS / REMAINING:
     - ORD-US2: updateOrderStatus ACCEPTED -> PROCESSING succeeds
     - ORD-US2: updateOrderStatus DISPATCHED -> PROCESSING rejected
     - ORD-US2: updateOrderStatus on non-existent order throws 404
+    - Credit limit: net exposure after payments allows order when gross exposure would not
 
   OrderControllerWebMvcTest (5 WebMvc slice tests):
-    - GET /api/orders as MERCHANT -> 200 (calls scoped service method)
-    - GET /api/orders as ADMIN -> 200 (calls all-orders service method)
+    - GET /api/orders as MERCHANT -> 200
+    - GET /api/orders as ADMIN -> 200
     - PUT /api/orders/1/status as MANAGER -> 200
     - PUT /api/orders/1/status as MERCHANT -> 403
     - PUT /api/orders/1/status unauthenticated -> 401
 
+  ORDInvoicePaymentTest.java — 4 Mockito unit tests (InvoiceService):
+    - ORD-US5: generateForOrder snapshots merchant details
+    - ORD-US5: generateForOrder is idempotent (returns existing)
+    - ORD-US5: invoice lines match order items
+    - ORD-US5: invoice number follows INV-YYYY-NNNNN format
+
+  PaymentServiceTest — 3 Mockito unit tests (PaymentService):
+    - ORD-US6: recordPayment succeeds when amount <= outstanding
+    - ORD-US6: recordPayment rejects amount exceeding outstanding
+    - ORD-US6: recordPayment rejects zero amount
+
+  InvoicePaymentWebMvcTest (5 WebMvc slice tests):
+    - GET /api/invoices as MERCHANT -> 200
+    - GET /api/invoices as ADMIN -> 200
+    - POST /api/invoices/1/payments as ADMIN -> 201
+    - POST /api/invoices/1/payments as MERCHANT -> 403
+    - GET /api/merchant-financials/balance as MERCHANT -> 200
+
   ORD-US1 merchant isolation and discount math are also tested in
   MerchantAccountServiceTest (20 tests).
+
+  Total ORD-specific tests: 26 (9+5 US1/US2 + 4+3+5 US3/US5/US6).
+  Total project tests: 96.
 
 
 ================================================================================
@@ -365,8 +508,8 @@ GAPS / REMAINING:
     depends on order cancellation rules once implemented.
 
   - ACC merchant profiles (credit limit, discounts, standing) are inputs to
-    OrderService.placeOrder — ORD work should keep MerchantProfile and
-    Order totals consistent when invoices/payments are added later.
+    OrderService.placeOrder. Credit limit enforcement subtracts recorded
+    payments so exposure matches economic reality alongside ORD-US3 balance.
 
   - SQL MIGRATION for existing databases: legacy orders with PENDING or
     CONFIRMED status should be migrated to ACCEPTED:

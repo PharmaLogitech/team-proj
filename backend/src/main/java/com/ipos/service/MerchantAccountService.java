@@ -118,7 +118,9 @@ public class MerchantAccountService {
                                                   BigDecimal creditLimit,
                                                   DiscountPlanType planType,
                                                   BigDecimal fixedDiscountPercent,
-                                                  String flexibleTiersJson) {
+                                                  String flexibleTiersJson,
+                                                  String vatRegistrationNumber,
+                                                  Integer paymentTermsDays) {
 
         /* ── Validate credentials ─────────────────────────────────────────── */
 
@@ -203,6 +205,11 @@ public class MerchantAccountService {
             profile.setFixedDiscountPercent(null);
             profile.setFlexibleTiersJson(flexibleTiersJson);
         }
+
+        if (vatRegistrationNumber != null) {
+            profile.setVatRegistrationNumber(vatRegistrationNumber);
+        }
+        profile.setPaymentTermsDays(paymentTermsDays != null ? paymentTermsDays : 30);
 
         return profileRepository.save(profile);
     }

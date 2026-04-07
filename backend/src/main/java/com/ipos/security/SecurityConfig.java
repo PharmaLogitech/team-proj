@@ -320,6 +320,25 @@ public class SecurityConfig {
                 .requestMatchers("/api/orders/**").authenticated()
 
                 /*
+                 * IPOS-SA-ORD (Invoices) — Payment recording is ADMIN only (ORD-US6).
+                 * Must appear before the generic /api/invoices/** catch-all.
+                 */
+                .requestMatchers(HttpMethod.POST, "/api/invoices/*/payments").hasRole("ADMIN")
+
+                /*
+                 * IPOS-SA-ORD (Invoices) — Invoice listing/detail for all authenticated
+                 * users.  Merchant isolation is enforced at the controller level.
+                 * GET /api/invoices and GET /api/invoices/{id} (ORD-US5).
+                 */
+                .requestMatchers("/api/invoices/**").authenticated()
+
+                /*
+                 * IPOS-SA-ORD (Merchant Financials) — MERCHANT balance (ORD-US3).
+                 * Only merchants need to see their own balance.
+                 */
+                .requestMatchers("/api/merchant-financials/**").hasRole("MERCHANT")
+
+                /*
                  * IPOS-SA-RPRT (Reporting) — MANAGER and ADMIN only.
                  * These endpoints don't exist yet; this rule is a placeholder
                  * so when RPT-US1–US5 are implemented, they're already secured.

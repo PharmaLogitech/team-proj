@@ -53,7 +53,7 @@ Configure `backend/src/main/resources/application.properties` with your MySQL cr
 |---------|------|--------|
 | Account Management | IPOS-SA-ACC | ✅ Complete |
 | Catalogue & Inventory | IPOS-SA-CAT | ⚠️ Mostly Complete (US1 partial) |
-| Orders & Fulfillment | IPOS-SA-ORD | ⚠️ Partial (US1/US2/US4 done; US3/US5/US6 not started) |
+| Orders & Fulfillment | IPOS-SA-ORD | ✅ Complete (US1–US6 all done) |
 | Merchant Profiles | IPOS-SA-MER | ✅ Complete |
 | Reporting | IPOS-SA-RPRT | ⚠️ Partial (low-stock report done; RPT-US1–5 remain) |
 
@@ -63,7 +63,9 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 
 **Key Services:**
 - **`service/ProductService.java`** — Full catalogue CRUD: create (CAT-US2), update (CAT-US4), delete with audit log (CAT-US3), role-aware list (CAT-US6), multi-criteria search (CAT-US5), stock delivery recording with atomic availability increment (CAT-US7), min-stock threshold support (CAT-US8), low-stock query for report and banner (CAT-US9/US10).
-- **`service/OrderService.java`** — Most complex service. Handles the entire order pipeline atomically: standing check → stock validation + decrement → price snapshot → discount calc (FIXED or FLEXIBLE credit) → credit limit enforcement → save with status ACCEPTED. Also provides role-scoped order listing (`findOrdersForActor`) and lifecycle status updates (`updateOrderStatus`) with transition validation.
+- **`service/OrderService.java`** — Most complex service. Handles the entire order pipeline atomically: standing check → stock validation + decrement → price snapshot → discount calc (FIXED or FLEXIBLE credit) → credit limit enforcement → save with status ACCEPTED → invoice generation (ORD-US5). Also provides role-scoped order listing (`findOrdersForActor`) and lifecycle status updates (`updateOrderStatus`) with transition validation.
+- **`service/InvoiceService.java`** — Invoice generation (ORD-US5). Snapshots merchant contact details, VAT, and order line items onto an Invoice entity. Called from `OrderService.placeOrder` in the same transaction. Sequential numbering (INV-YYYY-NNNNN). Idempotent via unique order FK.
+- **`service/PaymentService.java`** — Payment recording (ORD-US6). Validates amount against invoice outstanding balance (totalDue - sum paid). ADMIN only.
 - **`service/MerchantAccountService.java`** — Merchant creation (atomic User + MerchantProfile), flexible tier validation, month-close settlement with rebate calculation.
 - **`service/UserService.java`** — Staff user CRUD. Explicitly rejects `role=MERCHANT` (must use MerchantAccountService).
 - **`service/CatalogueService.java`** — Catalogue initialization guard (CAT-US1): ensures the catalogue is registered only once via `CatalogueMetadata` singleton row.
@@ -78,13 +80,16 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 
 **Entities & Relationships:**
 - `User` — id, name, username, passwordHash, role (ADMIN/MANAGER/MERCHANT). Optional 1:1 with MerchantProfile.
-- `MerchantProfile` — 1:1 with User. Holds contactEmail, contactPhone, addressLine, creditLimit, accountStatus (ACTIVE/INACTIVE), standing (NORMAL/IN_DEFAULT/SUSPENDED), discount plan (FIXED or FLEXIBLE), inDefaultSince, flexibleDiscountCredit, chequeRebatePending.
+- `MerchantProfile` — 1:1 with User. Holds contactEmail, contactPhone, addressLine, creditLimit, accountStatus (ACTIVE/INACTIVE), standing (NORMAL/IN_DEFAULT/SUSPENDED), discount plan (FIXED or FLEXIBLE), inDefaultSince, flexibleDiscountCredit, chequeRebatePending, vatRegistrationNumber, paymentTermsDays (default 30).
 - `Product` — id, productCode (unique business SKU), description, price (BigDecimal), availabilityCount, minStockThreshold (nullable Integer — CAT-US8, null = no threshold configured).
 - `StockDelivery` — id, product (ManyToOne), deliveryDate (LocalDate), quantityReceived, supplierReference (nullable, max 255), recordedBy (ManyToOne User), recordedAt (Instant). Table: `stock_deliveries`. CAT-US7 audit trail.
 - `LowStockProductDto` — read-only DTO for the low-stock report (CAT-US9/US10): id, productCode, description, availabilityCount (0 if null), minStockThreshold.
 - `CatalogueMetadata` — singleton row (id=1) recording when the catalogue was initialized (CAT-US1).
 - `Order` → M:1 User (merchant), 1:M OrderItem. Snapshots grossTotal, fixedDiscountAmount, flexibleCreditApplied, totalDue at placement. Status lifecycle: ACCEPTED → PROCESSING → DISPATCHED (forward-only) + CANCELLED branch. Legacy PENDING/CONFIRMED kept with @Deprecated.
 - `OrderItem` → M:1 Order, M:1 Product. Snapshots unitPriceAtOrder.
+- `Invoice` — 1:1 with Order (unique FK). Snapshots merchant contact details, VAT, financial totals. 1:M InvoiceLine, 1:M Payment. Generated automatically at order placement (ORD-US5).
+- `InvoiceLine` — M:1 Invoice. Snapshots product description, quantity, unitPrice, lineTotal.
+- `Payment` — M:1 Invoice. Records method (BANK_TRANSFER/CARD/CHEQUE), amount, recordedBy (ADMIN user). ORD-US6.
 - `MonthlyRebateSettlement` — M:1 User. Records month-close rebate calculations. Unique constraint on (merchant_id, settlement_year_month).
 - `ProductDeletionLog` — Audit trail for product deletions (CAT-US3): snapshots productId, productCode, description, deletedBy (User), deletedAt.
 - `StandingChangeLog` — Audit log for every standing transition (who, when, from, to). CAT-US5 / ACC-US5.
@@ -110,6 +115,10 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 | `/api/products/{id}/deliveries` | POST | ADMIN (CAT-US7, also `@PreAuthorize`) |
 | `/api/orders` | GET, POST | Authenticated (GET is role-scoped: MERCHANT own orders only) |
 | `/api/orders/{id}/status` | PUT | MANAGER, ADMIN (ORD-US2 lifecycle transitions) |
+| `/api/invoices` | GET | Authenticated (role-scoped: MERCHANT own; staff all) (ORD-US5) |
+| `/api/invoices/{id}` | GET | Authenticated (MERCHANT own only; staff any) (ORD-US5) |
+| `/api/invoices/{id}/payments` | POST | ADMIN only (ORD-US6 payment recording) |
+| `/api/merchant-financials/balance` | GET | MERCHANT only (ORD-US3 outstanding balance) |
 | `/api/reports/low-stock` | GET | MANAGER, ADMIN (CAT-US10 real-time low-stock report) |
 
 ### Frontend Structure (`frontend/src/`)
@@ -132,6 +141,7 @@ No router library — uses simple `currentPage` state in App.jsx.
 **Route → Component mapping** (in `App.jsx`):
 - `catalogue` → `Catalogue.jsx` — product listing table with role-aware columns; ADMIN tools: init, create, edit (with minStockThreshold), delete (Yes/No modal), "+ Stock" delivery modal (CAT-US7); low-stock warning in table (CAT-US8/US9).
 - `order` → `OrderForm.jsx` — multi-line order placement with discount breakdown; orders tracking table ("My Orders" for MERCHANT, "All Orders" for staff) with status badges, staff action buttons, and 15s auto-polling (ORD-US1/US2).
+- `invoices` → `Invoices.jsx` — invoice listing (role-scoped), invoice detail with lines and payments, MERCHANT balance summary card (ORD-US3), ADMIN payment recording form (ORD-US6).
 - `reporting` → `ReportingPlaceholder.jsx` — low-stock report table (CAT-US10) + planned RPT-US1–5 stubs.
 - `accounts` → `MerchantCreate.jsx` — admin form for atomic merchant+profile creation.
 - `merchants` → `MerchantManagement.jsx` — edit profiles, standing transitions, month-close settlement.
@@ -158,6 +168,10 @@ No router library — uses simple `currentPage` state in App.jsx.
 | `placeOrder(merchantId, items)` | POST | `/api/orders` |
 | `getOrders()` | GET | `/api/orders` (role-scoped by backend) |
 | `updateOrderStatus(orderId, status)` | PUT | `/api/orders/{id}/status` |
+| `getInvoices()` | GET | `/api/invoices` (role-scoped by backend) |
+| `getInvoiceDetail(invoiceId)` | GET | `/api/invoices/{id}` |
+| `recordPayment(invoiceId, amount, method)` | POST | `/api/invoices/{id}/payments` (ADMIN) |
+| `getMerchantBalance()` | GET | `/api/merchant-financials/balance` (MERCHANT) |
 
 ---
 
@@ -183,7 +197,7 @@ Merchants must be in `NORMAL` standing to place orders. Managers (and Admins) ca
 `POST /api/merchant-accounts` (ADMIN only) is the only valid way to create a MERCHANT user. `POST /api/users` explicitly rejects `role=MERCHANT`. The creation is fully atomic: no `User` row exists without an accompanying `MerchantProfile`.
 
 ### Credit Limit Enforcement
-Outstanding exposure = sum of `totalDue` across all non-CANCELLED orders for a merchant. New orders are rejected if `existingExposure + newOrder.totalDue > creditLimit`.
+Net outstanding exposure = sum of `totalDue` across all non-CANCELLED orders for that merchant, **minus** the sum of all **payments** recorded against that merchant’s invoices (`InvoiceRepository.sumPaymentsByMerchantId`). The result is floored at zero. New orders are rejected if `netExposure + newOrder.totalDue > creditLimit`. This aligns the credit check with money actually still owed after partial settlements (ORD-US6).
 
 ### Merchant Isolation (ORD-US1)
 If the caller is a MERCHANT, `OrderService.placeOrder()` forces `merchantId` to the caller's own user ID at the service layer — merchants cannot place orders for others.
@@ -212,15 +226,16 @@ A persistent low-stock warning banner is displayed below the navigation bar for 
 
 ## Tests
 
-83 tests total across 4 test classes. Test profile uses H2 in-memory DB with bootstrap disabled (`application-test.properties`).
+96 tests total across 7 test classes. Test profile uses H2 in-memory DB with bootstrap disabled (`application-test.properties`).
 
 | Test Class | Tests | Coverage |
 |------------|-------|---------|
 | `com/ipos/cat/CatalogueCatTest.java` | 31 Mockito unit tests | CAT-US2–US10: product CRUD, search, stock masking, delivery recording, threshold validation, audit logging, low-stock query |
 | `com/ipos/cat/ProductControllerCatalogueCatWebMvcTest.java` | 15 WebMvc slice tests | DTO validation (400), success paths (200/201/204), role enforcement (403), CAT-US5/US6/US7/US8 |
 | `com/ipos/cat/ReportControllerWebMvcTest.java` | 4 WebMvc slice tests | CAT-US10: MANAGER 200, ADMIN 200, MERCHANT 403, unauthenticated 401 |
-| `com/ipos/ord/ORDOrderTest.java` | 8 Mockito unit tests | ORD-US1: placeOrder ACCEPTED status, empty/null items rejection; ORD-US2: findOrdersForActor scoping, updateOrderStatus transitions |
+| `com/ipos/ord/ORDOrderTest.java` | 9 Mockito unit tests | ORD-US1: placeOrder ACCEPTED status, empty/null items rejection, credit limit net of payments; ORD-US2: findOrdersForActor scoping, updateOrderStatus transitions |
 | `com/ipos/ord/OrderControllerWebMvcTest.java` | 5 WebMvc slice tests | ORD-US2: GET /api/orders role-scoped, PUT status RBAC (MANAGER 200, MERCHANT 403, unauth 401) |
+| `com/ipos/ord/ORDInvoicePaymentTest.java` | 4 Mockito + 3 Mockito + 5 WebMvc | ORD-US5: invoice snapshot, idempotency, lines, numbering; ORD-US6: payment validation; WebMvc: invoice/payment/balance RBAC |
 | `com/ipos/service/MerchantAccountServiceTest.java` | 20 Mockito unit tests | ACC-US1 merchant creation, tier validation, discount calculations, standing guards, credit limits, ORD-US1 merchant isolation |
 
 There are no frontend tests.
@@ -229,15 +244,14 @@ There are no frontend tests.
 
 ## User Story Backlog (What's Left)
 
-Full status in `ACCprogress.txt` (ACC — complete), `CATprogress.txt` (CAT), and `ORDprogress.txt` (ORD — in progress).
+Full status in `ACCprogress.txt` (ACC — complete), `CATprogress.txt` (CAT), and `ORDprogress.txt` (ORD — US1–US6 complete).
 
 **CAT (Catalogue & Inventory):**
 - **CAT-US2–US10**: Complete. US9 persistent low-stock banner for ADMIN; US10 real-time low-stock report at `/api/reports/low-stock`.
 - **CAT-US1**: Partial — catalogue initialization endpoint exists but is not enforced as a prerequisite before adding products.
 
 **ORD (Orders):**
-- **ORD-US1/US2/US4**: Complete. Multi-line order placement with ACCEPTED status; role-scoped order listing; staff status update lifecycle (ACCEPTED/PROCESSING/DISPATCHED/CANCELLED); frontend tracking table with polling.
-- **ORD-US3/US5/US6**: Not started (Invoice and Payment entities required).
+- **ORD-US1–US6**: All complete. Multi-line order placement, status lifecycle tracking, automated stock reduction, invoice generation with merchant/VAT snapshots, payment recording (Bank Transfer/Card/Cheque), and merchant outstanding balance with due-date elapsed tracking.
 
 ---
 

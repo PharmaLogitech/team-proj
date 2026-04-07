@@ -9,8 +9,9 @@
  * ║        - clear scenario-driven test names                                    ║
  * ║                                                                              ║
  * ║  CONTENTS:                                                                    ║
- * ║    1) ORDOrderTest (Mockito unit tests — 8 tests):                           ║
+ * ║    1) ORDOrderTest (Mockito unit tests — 9 tests):                           ║
  * ║       - ORD-US1 placeOrder sets ACCEPTED, rejects empty items                ║
+ * ║       - ORD-US1 credit limit net of payments                                 ║
  * ║       - ORD-US2 findOrdersForActor scoping (merchant vs staff)               ║
  * ║       - ORD-US2 updateOrderStatus valid/invalid transitions                  ║
  * ║    2) OrderControllerWebMvcTest (WebMvc slice — 5 tests):                    ║
@@ -32,11 +33,13 @@ import com.ipos.entity.Order.OrderStatus;
 import com.ipos.entity.OrderItem;
 import com.ipos.entity.Product;
 import com.ipos.entity.User;
+import com.ipos.repository.InvoiceRepository;
 import com.ipos.repository.MerchantProfileRepository;
 import com.ipos.repository.OrderRepository;
 import com.ipos.repository.ProductRepository;
 import com.ipos.repository.UserRepository;
 import com.ipos.security.SecurityConfig;
+import com.ipos.service.InvoiceService;
 import com.ipos.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -84,13 +87,17 @@ public class ORDOrderTest {
     @Mock private ProductRepository productRepository;
     @Mock private UserRepository userRepository;
     @Mock private MerchantProfileRepository profileRepository;
+    @Mock private InvoiceService invoiceService;
+    @Mock private InvoiceRepository invoiceRepository;
 
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
         orderService = new OrderService(
-                orderRepository, productRepository, userRepository, profileRepository);
+                orderRepository, productRepository, userRepository, profileRepository,
+                invoiceService,
+                invoiceRepository);
     }
 
     /* ── helpers ────────────────────────────────────────────────────────────── */
@@ -146,6 +153,7 @@ public class ORDOrderTest {
         when(productRepository.findById(10L)).thenReturn(Optional.of(product));
         when(orderRepository.sumTotalDueByMerchantExcludingStatus(
                 eq(merchantId), any(OrderStatus.class))).thenReturn(BigDecimal.ZERO);
+        when(invoiceRepository.sumPaymentsByMerchantId(merchantId)).thenReturn(BigDecimal.ZERO);
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> {
             Order o = inv.getArgument(0);
             o.setId(1L);
@@ -242,6 +250,35 @@ public class ORDOrderTest {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> orderService.updateOrderStatus(999L, OrderStatus.PROCESSING));
         assertEquals(404, ex.getStatusCode().value());
+    }
+
+    @Test
+    @DisplayName("Credit limit: net exposure subtracts payments — order allowed when gross would fail")
+    void placeOrder_netExposureAfterPayments_allowsOrder() {
+        Long merchantId = 1L;
+        User merchant = sampleMerchantUser(merchantId);
+        MerchantProfile profile = sampleProfile(merchant);
+        profile.setCreditLimit(new BigDecimal("200.00"));
+        Product product = sampleProduct(10L, "Paracetamol", "5.00", 100);
+
+        when(userRepository.findById(merchantId)).thenReturn(Optional.of(merchant));
+        when(profileRepository.findByUserId(merchantId)).thenReturn(Optional.of(profile));
+        when(productRepository.findById(10L)).thenReturn(Optional.of(product));
+        /* Gross order exposure £500, but merchant paid £400 — net £100. New order £90 → £190 < £200. */
+        when(orderRepository.sumTotalDueByMerchantExcludingStatus(
+                eq(merchantId), any(OrderStatus.class))).thenReturn(new BigDecimal("500.00"));
+        when(invoiceRepository.sumPaymentsByMerchantId(merchantId)).thenReturn(new BigDecimal("400.00"));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(1L);
+            return o;
+        });
+
+        List<OrderItem> items = List.of(itemFor(10L, 18));
+        Order result = orderService.placeOrder(merchantId, items, merchantId, User.Role.MERCHANT);
+
+        assertEquals(OrderStatus.ACCEPTED, result.getStatus());
+        verify(orderRepository).save(any(Order.class));
     }
 }
 

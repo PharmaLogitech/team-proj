@@ -98,17 +98,30 @@ public class MerchantProfile {
     @Column(name = "address_line", nullable = false)
     private String addressLine;
 
+    // ── VAT Registration (ORD-US5 — invoice generation) ─────────────────────
+
+    /** Merchant's VAT registration number, snapshotted onto invoices at issue time. */
+    @Column(name = "vat_registration_number")
+    private String vatRegistrationNumber;
+
+    // ── Payment Terms (ORD-US3/US5 — invoice due date calculation) ─────────
+
+    /** Days after invoice issue before payment is due. Default 30. */
+    @Column(name = "payment_terms_days", nullable = false)
+    private int paymentTermsDays = 30;
+
     // ── Credit Limit (ACC-US1) ───────────────────────────────────────────────
 
     /*
-     * The maximum outstanding order exposure allowed for this merchant.
-     * OrderService checks: sum of non-cancelled totalDue + new order <= creditLimit.
+     * The maximum net outstanding exposure allowed for this merchant.
+     * OrderService.placeOrder compares: (sum of non-cancelled order totalDue
+     * minus sum of payments on that merchant's invoices), plus the new order's
+     * totalDue, against creditLimit. Net exposure is floored at zero.
      *
      * PLACEHOLDER NOTE:
      *   The full credit policy (when to flag IN_DEFAULT, grace periods, etc.)
-     *   is not yet defined.  For now, the credit limit is a simple ceiling on
-     *   outstanding order value.  Replace this comment with real policy rules
-     *   when ACC-US5 (defaulted accounts) is fully specified.
+     *   is not yet defined.  Replace this comment with real policy rules when
+     *   ACC-US5 (defaulted accounts) is fully specified.
      */
     @Column(name = "credit_limit", precision = 12, scale = 2, nullable = false)
     private BigDecimal creditLimit;
@@ -301,6 +314,22 @@ public class MerchantProfile {
 
     public void setAddressLine(String addressLine) {
         this.addressLine = addressLine;
+    }
+
+    public String getVatRegistrationNumber() {
+        return vatRegistrationNumber;
+    }
+
+    public void setVatRegistrationNumber(String vatRegistrationNumber) {
+        this.vatRegistrationNumber = vatRegistrationNumber;
+    }
+
+    public int getPaymentTermsDays() {
+        return paymentTermsDays;
+    }
+
+    public void setPaymentTermsDays(int paymentTermsDays) {
+        this.paymentTermsDays = paymentTermsDays;
     }
 
     public BigDecimal getCreditLimit() {

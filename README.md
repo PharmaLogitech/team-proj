@@ -248,7 +248,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 | **IPOS-SA-ACC** | Implemented (prototype) | Merchant onboarding (`POST /api/merchant-accounts`, validated DTO), staff users (`/api/users`), RBAC. See **`ACCprogress.txt`**. |
 | **IPOS-SA-MER** | Implemented (prototype) | Merchant **profiles**: `GET`/`PUT /api/merchant-profiles`, flexible **month-close** (`POST .../close-month`), contact edits, standing rules (`IN_DEFAULT` → `NORMAL`/`SUSPENDED` with 30-day rule for managers), **`StandingChangeLog`** audit. Manager + Admin only (not merchants). Documented in **`ACCprogress.txt`** / **`RBAC.md`**. |
 | **IPOS-SA-CAT** | Mostly complete (US1 partial) | Full product CRUD with unique `productCode` (SKU), `ProductDeletionLog` on delete, multi-criteria `GET /api/products/search` (CAT-US5), role-aware catalogue (`CatalogueProductDto` masks stock for merchants — CAT-US6), `POST /api/products/{id}/deliveries` for stock deliveries (CAT-US7), optional `minStockThreshold` on products (CAT-US8), catalogue UI with admin tools (init, create/edit with threshold, “+ Stock” delivery modal, search). **CAT-US9:** admin low-stock banner (strict `<` threshold rule) plus inline table warnings. **CAT-US10:** shared backend query `GET /api/reports/low-stock`. **CAT-US1** gap: catalogue init is not enforced before adding products. See **`CATprogress.txt`**. |
-| **IPOS-SA-ORD** | Partial (US1/US2/US4 done) | **ORD-US1:** multi-line order placement with ACCEPTED status, merchant isolation, empty-items validation. **ORD-US2:** role-scoped `GET /api/orders` (MERCHANT own orders; staff all), `PUT /api/orders/{id}/status` lifecycle (ACCEPTED/PROCESSING/DISPATCHED/CANCELLED), frontend tracking table with polling + staff action buttons. **ORD-US4:** stock decremented atomically at placement. Invoices (US3/US5) and payments (US6) not yet started. |
+| **IPOS-SA-ORD** | Complete (US1–US6) | **ORD-US1:** multi-line order placement with ACCEPTED status, merchant isolation, empty-items validation. **Credit limit** uses net exposure: sum of non-cancelled order `totalDue` minus sum of payments on that merchant’s invoices, then plus the new order. **ORD-US2:** role-scoped `GET /api/orders`, `PUT /api/orders/{id}/status` lifecycle, frontend tracking table with polling. **ORD-US4:** stock decremented atomically at placement. **ORD-US5:** Invoice + InvoiceLine auto-generated at placement, merchant/VAT snapshot, INV-YYYY-NNNNN numbering. **ORD-US6:** Payment recording (BANK_TRANSFER/CARD/CHEQUE), ADMIN only, validates against outstanding. **ORD-US3:** MERCHANT balance view — outstanding total, oldest unpaid due date, days elapsed. |
 | **IPOS-SA-RPRT** | Partial | **`GET /api/reports/low-stock`** (MANAGER, ADMIN): real-time low-stock snapshot (CAT-US10). **`ReportingPlaceholder.jsx`** shows the report table plus a stub list for future RPT-US1–US5. Full operational reporting suite not implemented. |
 
 ---
@@ -281,6 +281,9 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -Conten
 | Products | `POST /api/products/{id}/deliveries` | ADMIN |
 | Orders | `GET`/`POST /api/orders` | Authenticated (GET is role-scoped) |
 | Orders | `PUT /api/orders/{id}/status` | MANAGER, ADMIN |
+| Invoices | `GET /api/invoices`, `GET /api/invoices/{id}` | Authenticated (role-scoped) |
+| Payments | `POST /api/invoices/{id}/payments` | ADMIN |
+| Balance | `GET /api/merchant-financials/balance` | MERCHANT |
 | Reports | `GET /api/reports/low-stock` | MANAGER, ADMIN (`/api/reports/**`) |
 
 Additional report endpoints can be added under `/api/reports/**` using the same security rule in `SecurityConfig.java`. Full detail: **`RBAC.md`**.
@@ -289,7 +292,7 @@ Additional report endpoints can be added under `/api/reports/**` using the same 
 
 ## Backend Tests
 
-JUnit 5 tests live under `backend/src/test/java/` (**83 tests** total with the test profile):
+JUnit 5 tests live under `backend/src/test/java/` (**96 tests** total with the test profile):
 
 | Class | Role |
 |-------|------|
@@ -297,8 +300,9 @@ JUnit 5 tests live under `backend/src/test/java/` (**83 tests** total with the t
 | **`com.ipos.cat.CatalogueCatTest`** | 31 Mockito unit tests — product CRUD, search, stock masking, deliveries, thresholds, low-stock service logic. |
 | **`com.ipos.cat.ProductControllerCatalogueCatWebMvcTest`** | 15 WebMvc tests — `ProductController`, validation and RBAC for products/search/deliveries. |
 | **`com.ipos.cat.ReportControllerWebMvcTest`** | 4 WebMvc tests — `GET /api/reports/low-stock` access rules. |
-| **`com.ipos.ord.ORDOrderTest`** | 8 Mockito unit tests — ORD-US1 placeOrder ACCEPTED status, empty/null items rejection; ORD-US2 findOrdersForActor scoping, updateOrderStatus transitions. |
+| **`com.ipos.ord.ORDOrderTest`** | 9 Mockito unit tests — ORD-US1 placeOrder ACCEPTED status, empty/null items rejection, credit limit net of payments; ORD-US2 findOrdersForActor scoping, updateOrderStatus transitions. |
 | **`com.ipos.ord.OrderControllerWebMvcTest`** | 5 WebMvc tests — ORD-US2 GET role-scoped, PUT status RBAC (MANAGER 200, MERCHANT 403, unauth 401). |
+| **`com.ipos.ord.ORDInvoicePaymentTest`** | 12 tests — ORD-US3/US5/US6: `InvoiceService` and `PaymentService` unit tests; WebMvc for invoices, payments, merchant balance RBAC. |
 
 There are **no frontend tests**.
 
@@ -504,4 +508,4 @@ Tables are created automatically by Hibernate on first run.
 - Jakarta Bean Validation: used on merchant account DTOs (`spring-boot-starter-validation`).
 - Full stack: frontend → REST API → service → repository → MySQL.
 
-Remaining work is tracked in **`CATprogress.txt`** (e.g. CAT-US1 enforcement), **`ORDprogress.txt`** (ORD-US1/US2/US4 done; ORD-US3/US5/US6 — invoices, balance, payments — not started), and future **RPT** stories beyond the low-stock report; **`ACCprogress.txt`** summarises the account-management package status.
+Remaining work is tracked in **`CATprogress.txt`** (e.g. CAT-US1 enforcement) and future **RPT** stories beyond the low-stock report; **`ORDprogress.txt`** covers the ORD epic (US1–US6 implemented); **`ACCprogress.txt`** summarises the account-management package status.

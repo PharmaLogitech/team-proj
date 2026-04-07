@@ -24,8 +24,10 @@
  * ║                   settlements).  The credit reduces totalDue.               ║
  * ║                                                                              ║
  * ║  CREDIT LIMIT:                                                               ║
- * ║        Sum of totalDue across non-cancelled orders + new order's totalDue   ║
- * ║        must not exceed the merchant's creditLimit.                           ║
+ * ║        Net outstanding exposure = sum of totalDue across non-cancelled       ║
+ * ║        orders MINUS sum of all payments recorded against that merchant's     ║
+ * ║        invoices (ORD-US3/US6).  New order is rejected if                     ║
+ * ║        netExposure + newOrder.totalDue > creditLimit.                          ║
  * ║                                                                              ║
  * ║  ORD-US1 (merchant isolation):                                               ║
  * ║        If the caller is a MERCHANT, the merchantId is forced to the         ║
@@ -52,6 +54,7 @@ import com.ipos.entity.Order;
 import com.ipos.entity.OrderItem;
 import com.ipos.entity.Product;
 import com.ipos.entity.User;
+import com.ipos.repository.InvoiceRepository;
 import com.ipos.repository.MerchantProfileRepository;
 import com.ipos.repository.OrderRepository;
 import com.ipos.repository.ProductRepository;
@@ -75,15 +78,21 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final MerchantProfileRepository profileRepository;
+    private final InvoiceService invoiceService;
+    private final InvoiceRepository invoiceRepository;
 
     public OrderService(OrderRepository orderRepository,
                         ProductRepository productRepository,
                         UserRepository userRepository,
-                        MerchantProfileRepository profileRepository) {
+                        MerchantProfileRepository profileRepository,
+                        InvoiceService invoiceService,
+                        InvoiceRepository invoiceRepository) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
+        this.invoiceService = invoiceService;
+        this.invoiceRepository = invoiceRepository;
     }
 
     /**
@@ -290,23 +299,27 @@ public class OrderService {
         order.setTotalDue(totalDue);
 
         /*
-         * Step 7: Credit limit check.
-         * Sum of existing outstanding totalDue + this order's totalDue
-         * must not exceed the merchant's credit limit.
-         *
-         * ASSUMPTION: "outstanding exposure" = sum of totalDue across all
-         * non-cancelled orders.  A real system would subtract payments
-         * received, but payment tracking is out of scope for now.
+         * Step 7: Credit limit check (net exposure after payments).
+         * Gross exposure = sum of totalDue on non-cancelled orders.
+         * Payments recorded against invoices reduce what the merchant still owes.
+         * Net exposure = max(0, grossExposure - paymentsReceived).
          */
-        BigDecimal existingExposure = orderRepository.sumTotalDueByMerchantExcludingStatus(
+        BigDecimal grossOrderExposure = orderRepository.sumTotalDueByMerchantExcludingStatus(
                 resolvedMerchantId, Order.OrderStatus.CANCELLED);
+        BigDecimal paymentsReceived = invoiceRepository.sumPaymentsByMerchantId(resolvedMerchantId);
+        BigDecimal existingExposure = grossOrderExposure.subtract(paymentsReceived);
+        if (existingExposure.compareTo(BigDecimal.ZERO) < 0) {
+            existingExposure = BigDecimal.ZERO;
+        }
         BigDecimal newExposure = existingExposure.add(totalDue);
 
         if (newExposure.compareTo(profile.getCreditLimit()) > 0) {
             throw new RuntimeException(
                     "Order would exceed credit limit. "
-                    + "Current exposure: £" + existingExposure.setScale(2, RoundingMode.HALF_UP)
-                    + ", This order: £" + totalDue.setScale(2, RoundingMode.HALF_UP)
+                    + "Current net exposure: £" + existingExposure.setScale(2, RoundingMode.HALF_UP)
+                    + " (orders £" + grossOrderExposure.setScale(2, RoundingMode.HALF_UP)
+                    + " − payments £" + paymentsReceived.setScale(2, RoundingMode.HALF_UP)
+                    + "), This order: £" + totalDue.setScale(2, RoundingMode.HALF_UP)
                     + ", Credit limit: £" + profile.getCreditLimit().setScale(2, RoundingMode.HALF_UP)
                     + ".");
         }
@@ -316,6 +329,15 @@ public class OrderService {
          * cascade = CascadeType.ALL on Order.items means this single save()
          * also INSERTs all the OrderItem rows.
          */
-        return orderRepository.save(order);
+        Order saved = orderRepository.save(order);
+
+        /*
+         * Step 9: Generate invoice (ORD-US5).
+         * The invoice is created in the same transaction so that if anything
+         * fails, neither the order nor the invoice is persisted.
+         */
+        invoiceService.generateForOrder(saved);
+
+        return saved;
     }
 }

@@ -23,5 +23,7 @@ public record UpdateMerchantProfileRequest(
         String standing,
         String contactEmail,
         String contactPhone,
-        String addressLine
+        String addressLine,
+        String vatRegistrationNumber,
+        Integer paymentTermsDays
 ) {}

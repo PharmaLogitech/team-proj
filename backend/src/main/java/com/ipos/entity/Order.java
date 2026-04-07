@@ -65,7 +65,13 @@ public class Order {
     @JoinColumn(name = "merchant_id")
     private User merchant;
 
+    /*
+     * Stored as VARCHAR (not MySQL ENUM) so new status values can be added
+     * without ALTER ENUM. If you see "Data truncated for column 'status'",
+     * run: backend/mysql-migrations/001-alter-orders-status-varchar.sql
+     */
     @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 32, nullable = false)
     private OrderStatus status;
 
     /*

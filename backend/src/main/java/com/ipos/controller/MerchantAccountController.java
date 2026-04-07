@@ -83,7 +83,9 @@ public class MerchantAccountController {
                     request.creditLimit(),
                     planType,
                     request.fixedDiscountPercent(),
-                    request.flexibleTiersJson()
+                    request.flexibleTiersJson(),
+                    request.vatRegistrationNumber(),
+                    request.paymentTermsDays()
             );
 
             return ResponseEntity.ok(MerchantProfileResponse.fromEntity(profile));

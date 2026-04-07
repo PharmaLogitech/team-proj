@@ -62,6 +62,12 @@ public record CreateMerchantAccountRequest(
          * Nullable for FIXED plan.
          * Example: [{"maxExclusive":1000,"percent":1},{"maxExclusive":2000,"percent":2},{"percent":3}]
          */
-        String flexibleTiersJson
+        String flexibleTiersJson,
+
+        /** Optional VAT registration number (ORD-US5 — snapshotted onto invoices). */
+        String vatRegistrationNumber,
+
+        /** Days until invoice is due. Defaults to 30 if null (ORD-US3/US5). */
+        Integer paymentTermsDays
 
 ) {}

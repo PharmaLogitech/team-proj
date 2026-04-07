@@ -129,6 +129,14 @@ public class MerchantProfileController {
                 profile.setAddressLine(request.addressLine());
             }
 
+            /* ── VAT & Payment Terms (ORD-US5/US3) ────────────────────────── */
+            if (request.vatRegistrationNumber() != null) {
+                profile.setVatRegistrationNumber(request.vatRegistrationNumber());
+            }
+            if (request.paymentTermsDays() != null && request.paymentTermsDays() > 0) {
+                profile.setPaymentTermsDays(request.paymentTermsDays());
+            }
+
             /* ── Credit Limit ─────────────────────────────────────────────── */
             if (request.creditLimit() != null) {
                 if (request.creditLimit().compareTo(BigDecimal.ZERO) <= 0) {

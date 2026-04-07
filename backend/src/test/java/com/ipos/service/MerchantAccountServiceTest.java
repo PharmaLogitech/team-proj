@@ -40,6 +40,7 @@ import com.ipos.entity.OrderItem;
 import com.ipos.entity.Product;
 import com.ipos.entity.StandingChangeLog;
 import com.ipos.entity.User;
+import com.ipos.repository.InvoiceRepository;
 import com.ipos.repository.MerchantProfileRepository;
 import com.ipos.repository.MonthlyRebateSettlementRepository;
 import com.ipos.repository.OrderRepository;
@@ -64,7 +65,9 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.*;
 
 /*
@@ -82,6 +85,7 @@ class MerchantAccountServiceTest {
     @Mock private MonthlyRebateSettlementRepository settlementRepository;
     @Mock private OrderRepository orderRepository;
     @Mock private ProductRepository productRepository;
+    @Mock private InvoiceRepository invoiceRepository;
 
     /*
      * Real instances — these are stateless/pure so mocking adds no value.
@@ -104,7 +108,10 @@ class MerchantAccountServiceTest {
                 orderRepository, passwordEncoder, objectMapper);
 
         orderService = new OrderService(
-                orderRepository, productRepository, userRepository, profileRepository);
+                orderRepository, productRepository, userRepository, profileRepository,
+                mock(InvoiceService.class),
+                invoiceRepository);
+        lenient().when(invoiceRepository.sumPaymentsByMerchantId(anyLong())).thenReturn(BigDecimal.ZERO);
 
         userService = new UserService(userRepository, passwordEncoder);
     }
@@ -141,7 +148,7 @@ class MerchantAccountServiceTest {
                 new BigDecimal("5000.00"),
                 DiscountPlanType.FIXED,
                 new BigDecimal("5.00"),
-                null);
+                null, null, null);
 
         assertNotNull(result);
         assertEquals("test@example.com", result.getContactEmail());
@@ -191,7 +198,7 @@ class MerchantAccountServiceTest {
                 new BigDecimal("10000.00"),
                 DiscountPlanType.FLEXIBLE,
                 null,
-                tiersJson);
+                tiersJson, null, null);
 
         assertEquals(DiscountPlanType.FLEXIBLE, result.getDiscountPlanType());
         assertNull(result.getFixedDiscountPercent());
@@ -215,7 +222,7 @@ class MerchantAccountServiceTest {
                         "Name", "", "pass",
                         "e@e.com", "07700", "Addr",
                         new BigDecimal("1000"),
-                        DiscountPlanType.FIXED, new BigDecimal("5"), null));
+                        DiscountPlanType.FIXED, new BigDecimal("5"), null, null, null));
 
         assertTrue(ex.getMessage().contains("Username is required"));
         verify(userRepository, never()).save(any());
@@ -238,7 +245,7 @@ class MerchantAccountServiceTest {
                         "Name", "existing", "pass",
                         "e@e.com", "07700", "Addr",
                         new BigDecimal("1000"),
-                        DiscountPlanType.FIXED, new BigDecimal("5"), null));
+                        DiscountPlanType.FIXED, new BigDecimal("5"), null, null, null));
 
         assertTrue(ex.getMessage().contains("already taken"));
         verify(userRepository, never()).save(any());
@@ -260,7 +267,7 @@ class MerchantAccountServiceTest {
                         "Name", "zeromerchant", "pass",
                         "e@e.com", "07700", "Addr",
                         BigDecimal.ZERO,
-                        DiscountPlanType.FIXED, new BigDecimal("5"), null));
+                        DiscountPlanType.FIXED, new BigDecimal("5"), null, null, null));
 
         assertTrue(ex.getMessage().contains("Credit limit must be greater than zero"));
         verify(userRepository, never()).save(any());
@@ -639,7 +646,7 @@ class MerchantAccountServiceTest {
                 "Status Test", "statustest", "pass123",
                 "s@e.com", "07700", "1 Street",
                 new BigDecimal("5000.00"),
-                DiscountPlanType.FIXED, new BigDecimal("5.00"), null);
+                DiscountPlanType.FIXED, new BigDecimal("5.00"), null, null, null);
 
         assertEquals(AccountStatus.ACTIVE, result.getAccountStatus(),
                 "Newly created account must have ACTIVE status per ACC-US1");
