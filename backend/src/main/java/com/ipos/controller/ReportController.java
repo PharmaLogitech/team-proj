@@ -3,8 +3,7 @@
  * ║  WHAT: REST Controller for the Reporting package (IPOS-SA-RPRT).            ║
  * ║                                                                              ║
  * ║  WHY:  Centralises all report-generation endpoints under /api/reports.       ║
- * ║        Currently serves the low-stock report (CAT-US10); future RPT-US1–5   ║
- * ║        endpoints can be added here.                                         ║
+ * ║        Low-stock (CAT-US10); RPT-US1–US3 report endpoints.                   ║
  * ║                                                                              ║
  * ║  ACCESS CONTROL (ACC-US4 — RBAC):                                           ║
  * ║        SecurityConfig.java secures /api/reports/** for MANAGER and ADMIN.   ║
@@ -22,11 +21,18 @@
 package com.ipos.controller;
 
 import com.ipos.dto.LowStockProductDto;
+import com.ipos.dto.MerchantActivityReportResponse;
+import com.ipos.dto.MerchantOrderHistoryResponse;
+import com.ipos.dto.SalesTurnoverResponse;
 import com.ipos.service.ProductService;
+import com.ipos.service.ReportingService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -34,9 +40,11 @@ import java.util.List;
 public class ReportController {
 
     private final ProductService productService;
+    private final ReportingService reportingService;
 
-    public ReportController(ProductService productService) {
+    public ReportController(ProductService productService, ReportingService reportingService) {
         this.productService = productService;
+        this.reportingService = reportingService;
     }
 
     /**
@@ -53,5 +61,37 @@ public class ReportController {
     @GetMapping("/low-stock")
     public List<LowStockProductDto> getLowStockReport() {
         return productService.getLowStockProducts();
+    }
+
+    /**
+     * GET /api/reports/sales-turnover — RPT-US1 (MANAGER/ADMIN via /api/reports/**).
+     */
+    @GetMapping("/sales-turnover")
+    public SalesTurnoverResponse getSalesTurnover(
+            @RequestParam LocalDate start,
+            @RequestParam LocalDate end) {
+        return reportingService.getSalesTurnover(start, end);
+    }
+
+    /**
+     * GET /api/reports/merchants/{merchantId}/order-history — RPT-US2.
+     */
+    @GetMapping("/merchants/{merchantId}/order-history")
+    public MerchantOrderHistoryResponse getMerchantOrderHistory(
+            @PathVariable Long merchantId,
+            @RequestParam LocalDate start,
+            @RequestParam LocalDate end) {
+        return reportingService.getMerchantOrderHistory(merchantId, start, end);
+    }
+
+    /**
+     * GET /api/reports/merchants/{merchantId}/activity — RPT-US3.
+     */
+    @GetMapping("/merchants/{merchantId}/activity")
+    public MerchantActivityReportResponse getMerchantActivityReport(
+            @PathVariable Long merchantId,
+            @RequestParam LocalDate start,
+            @RequestParam LocalDate end) {
+        return reportingService.getMerchantActivityReport(merchantId, start, end);
     }
 }

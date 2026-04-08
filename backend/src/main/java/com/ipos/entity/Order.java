@@ -118,6 +118,13 @@ public class Order {
     @Column(name = "total_due", precision = 12, scale = 2)
     private BigDecimal totalDue;
 
+    /**
+     * Set when the order reaches {@link OrderStatus#DISPATCHED} (RPT-US2 dispatch date).
+     * Nullable for legacy rows or orders not yet dispatched.
+     */
+    @Column(name = "dispatched_at")
+    private Instant dispatchedAt;
+
     /*
      * ── ONE-TO-MANY RELATIONSHIP ─────────────────────────────────────────────
      *
@@ -244,5 +251,13 @@ public class Order {
 
     public void setTotalDue(BigDecimal totalDue) {
         this.totalDue = totalDue;
+    }
+
+    public Instant getDispatchedAt() {
+        return dispatchedAt;
+    }
+
+    public void setDispatchedAt(Instant dispatchedAt) {
+        this.dispatchedAt = dispatchedAt;
     }
 }

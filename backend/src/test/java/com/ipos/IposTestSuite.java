@@ -18,6 +18,7 @@ import com.ipos.ord.ORDInvoicePaymentTest;
 import com.ipos.ord.ORDOrderTest;
 import com.ipos.service.MerchantAccountServiceTest;
 import com.ipos.service.ProductServiceTest;
+import com.ipos.service.ReportingServiceTest;
 import org.junit.platform.suite.api.SelectClasses;
 import org.junit.platform.suite.api.Suite;
 
@@ -25,6 +26,7 @@ import org.junit.platform.suite.api.Suite;
 @SelectClasses({
         MerchantAccountServiceTest.class,
         ProductServiceTest.class,
+        ReportingServiceTest.class,
         CatalogueCatTest.class,
         ORDOrderTest.class,
         ORDInvoicePaymentTest.class

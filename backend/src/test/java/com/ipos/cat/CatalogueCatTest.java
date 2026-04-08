@@ -55,6 +55,7 @@ import com.ipos.repository.UserRepository;
 import com.ipos.security.SecurityConfig;
 import com.ipos.service.CatalogueService;
 import com.ipos.service.ProductService;
+import com.ipos.service.ReportingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -921,6 +922,9 @@ class ReportControllerWebMvcTest {
 
     @MockitoBean
     private ProductService productService;
+
+    @MockitoBean
+    private ReportingService reportingService;
 
     // ── CAT-US10: GET /api/reports/low-stock ─────────────────────────────────
 
