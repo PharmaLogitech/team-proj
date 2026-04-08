@@ -211,6 +211,61 @@ export async function getLowStockReport() {
   return response.json();
 }
 
+/**
+ * Sales turnover for a date range (RPT-US1).
+ * GET /api/reports/sales-turnover?start=YYYY-MM-DD&end=YYYY-MM-DD
+ * → { totalQuantitySold, totalRevenue, currency }
+ *
+ * ACCESS: MANAGER, ADMIN.
+ */
+export async function getSalesTurnoverReport({ start, end }) {
+  const params = new URLSearchParams({ start, end });
+  const response = await fetchWithAuth(`${API_BASE}/reports/sales-turnover?${params}`);
+  const body = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
+}
+
+/**
+ * Merchant order history for a date range (RPT-US2).
+ * GET /api/reports/merchants/{merchantId}/order-history?start=&end=
+ * → { rows: [...], periodTotalValue }
+ *
+ * ACCESS: MANAGER, ADMIN.
+ */
+export async function getMerchantOrderHistory(merchantId, { start, end }) {
+  const params = new URLSearchParams({ start, end });
+  const response = await fetchWithAuth(
+    `${API_BASE}/reports/merchants/${merchantId}/order-history?${params}`
+  );
+  const body = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
+}
+
+/**
+ * Detailed merchant activity with line items (RPT-US3).
+ * GET /api/reports/merchants/{merchantId}/activity?start=&end=
+ * → { header, orders: [...] }
+ *
+ * ACCESS: MANAGER, ADMIN.
+ */
+export async function getMerchantActivityReport(merchantId, { start, end }) {
+  const params = new URLSearchParams({ start, end });
+  const response = await fetchWithAuth(
+    `${API_BASE}/reports/merchants/${merchantId}/activity?${params}`
+  );
+  const body = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
+}
+
 /* ── Catalogue (CAT-US1) ─────────────────────────────────────────────────── */
 
 /**

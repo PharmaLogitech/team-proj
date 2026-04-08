@@ -1,0 +1,363 @@
+================================================================================
+ IPOS-SA-RPRT — Operational and Financial Reporting — Progress Report
+================================================================================
+
+Generated     : 2026-04-08
+Last updated  : 2026-04-08 (RPT-US1/US2/US3 implemented)
+Epic          : Operational and Financial Reporting
+Companion docs: ACCprogress.txt (Account Management)
+                 CATprogress.txt (Catalogue & Inventory — includes CAT-US10 low-stock)
+                 ORDprogress.txt (Order Fulfillment and Financial Tracking)
+Source stories : userstories.txt — Epic: Operational and Financial Reporting
+
+This document maps each **RPT** user story (US1–US5) to the current codebase,
+states what is DONE vs NOT DONE, and notes data gaps and implementation
+hints for future work. File paths are relative to the project root unless noted.
+
+For the **verbatim** text of every RPT user story (single source of truth for
+acceptance criteria wording), see section 4 below.
+
+SCOPE NOTE — CAT vs RPT:
+  • **CAT-US10** (low-stock report) lives under the Catalogue epic in
+    userstories.txt but must be “accessible through the IPOS-SA-RPRT package.”
+    It is **implemented** and fully documented in CATprogress.txt (backend
+    GET /api/reports/low-stock, frontend ReportingPlaceholder.jsx section).
+  • This file (**RPTprogress.txt**) tracks the **Reporting epic’s own** stories
+    from userstories.txt — **RPT-US1 through RPT-US5** only — which are
+    distinct operational/financial reports (sales turnover, merchant history,
+    etc.). **RPT-US1–US3 are implemented;** RPT-US4–US5 remain outstanding.
+
+
+================================================================================
+ 1. EPIC SUMMARY
+================================================================================
+
+Goal (from your epic description in userstories.txt):
+  This epic provides management and staff with tools to analyze sales
+  performance, merchant activity and stock turnover through on-screen
+  visualization and printed reports.
+
+Current state (high level):
+  • **RPT-US1 (Sales Turnover Reporting)** — DONE. `GET /api/reports/sales-turnover`
+    (`ReportingService.getSalesTurnover`): sums line quantities and sum of
+    `Order.totalDue` for non-cancelled orders with `placedAt` in the inclusive
+    date range (Europe/London midnight boundaries). Frontend: Reporting
+    section with date inputs, Run report, Print; `getSalesTurnoverReport()` in
+    api.js.
+  • **RPT-US2 (Merchant History Tracking)** — DONE. `Order.dispatched_at` column
+    (`Order.dispatchedAt`) set when status transitions to DISPATCHED in
+    `OrderService.updateOrderStatus`. `GET /api/reports/merchants/{id}/order-history`
+    returns rows (order id, placedAt, dispatchedAt, total value, PENDING/PARTIAL/PAID)
+    plus `periodTotalValue`. Frontend: merchant dropdown (`getMerchantProfiles`),
+    date range, table with totals row, Print. `getMerchantOrderHistory()` in api.js.
+  • **RPT-US3 (Individual Merchant Activity Report)** — DONE.
+    `GET /api/reports/merchants/{merchantId}/activity?start=&end=` —
+    `MerchantActivityReportResponse`: header from `MerchantProfile` + `User`
+    (contact email/phone/address, VAT); orders from
+    `OrderRepository.findByMerchantIdAndPlacedAtRangeWithItemsAndProducts`
+    (JOIN FETCH items + product). Per-order: line description, quantity,
+    unit price, line total; gross, fixed discount, flexible credit, total due.
+    Frontend: “Merchant Activity (RPT-US3)” section; `getMerchantActivityReport()` in api.js.
+  • **RPT-US4 (Global Invoice Monitoring)** — NOT STARTED. No date-filtered
+    “all invoices” report. Invoice listing APIs are role-scoped for normal
+    app use; a manager report would add query params + aggregation view.
+  • **RPT-US5 (Stock Turnover Analysis)** — NOT STARTED. Requires correlating
+    **sales quantities** (from `order_items` / ORD) with **receipts**
+    (`stock_deliveries` / CAT-US7) over a period. Story text explicitly says
+    depend on ORD + CAT being operational (they are).
+
+Infrastructure:
+  • **Backend:** `ReportController`: low-stock (CAT-US10), `sales-turnover`,
+    `merchants/{id}/order-history`, `merchants/{id}/activity` (RPT-US1–US3).
+    Core logic in `ReportingService` (+ `MerchantProfileRepository` for US3 header).
+  • **Security:** `SecurityConfig` — `GET /api/reports/**` → MANAGER, ADMIN.
+  • **Frontend:** `ReportingPlaceholder.jsx` — low-stock + RPT-US1–US3;
+    planned stub for US4–US5.
+  • **Frontend API:** `getLowStockReport`, `getSalesTurnoverReport`,
+    `getMerchantOrderHistory`, `getMerchantActivityReport` in api.js.
+  • **Data:** Orders (`Order`, `OrderItem`), invoices (`Invoice`, `InvoiceLine`,
+    `Payment`), products (`Product`), stock deliveries (`StockDelivery`) —
+    sufficient for most reports once queries and DTOs are defined.
+
+Prioritization (from userstories.txt — “Prioritization Table”):
+  RPT-US1  Sales Turnover Reporting          Must    Medium   Low
+  RPT-US2  Merchant History Tracking         Must    Medium   Low
+  RPT-US3  Individual Merchant Activity      Should  Medium   Low
+  RPT-US4  Global Invoice Monitoring         Should  Medium   Low
+  RPT-US5  Stock Turnover Analysis           Must    Large    Medium
+
+
+================================================================================
+ 2. REFERENCE — KEY FILES (RPT-RELATED AND DEPENDENCIES)
+================================================================================
+
+Backend — reporting surface
+  controller/ReportController.java
+    GET /api/reports/low-stock → ProductService (CAT-US10)
+    GET /api/reports/sales-turnover → ReportingService (RPT-US1)
+    GET /api/reports/merchants/{merchantId}/order-history → ReportingService (RPT-US2)
+    GET /api/reports/merchants/{merchantId}/activity → ReportingService (RPT-US3)
+
+  service/ReportingService.java — RPT-US1 aggregates; RPT-US2 payment status;
+    RPT-US3 header + line-item mapping
+
+  security/SecurityConfig.java
+    /api/reports/** → hasAnyRole("MANAGER", "ADMIN")
+
+Backend — data sources
+  entity/Order.java
+    … plus dispatchedAt (Instant nullable) for RPT-US2 dispatch date.
+
+  entity/OrderItem.java
+    order, product, quantity, unitPriceAtOrder
+
+  entity/Invoice.java
+    invoiceNumber, issuedAt, dueDate, order (1:1), merchant, snapshot fields,
+    totals, lines, payments
+
+  entity/Payment.java
+    invoice, amount, method, recordedAt, recordedBy
+
+  entity/StockDelivery.java
+    product, deliveryDate (LocalDate), quantityReceived, recordedAt, …
+
+  repository/OrderRepository.java — sumTotalDueInPeriodExcludingStatus,
+    findByMerchantIdAndPlacedAtRange (RPT-US2),
+    findByMerchantIdAndPlacedAtRangeWithItemsAndProducts (RPT-US3)
+  repository/MerchantProfileRepository.java — findByUserId (RPT-US3 header)
+  repository/OrderItemRepository.java — sumQuantityInPeriodExcludingStatus (RPT-US1)
+  repository/InvoiceRepository.java, repository/PaymentRepository.java — RPT-US2 payment status
+
+Frontend
+  src/ReportingPlaceholder.jsx — CAT-US10 + RPT-US1–US3 + planned US4–5 note
+
+  src/api.js — getLowStockReport, getSalesTurnoverReport, getMerchantOrderHistory,
+    getMerchantActivityReport
+
+  src/auth/rbac.js
+    PACKAGE_RPRT — MANAGER and ADMIN; MERCHANT has no Reporting nav.
+
+Tests
+  backend/src/test/java/com/ipos/service/ReportingServiceTest.java
+    13 Mockito unit tests (RPT-US1–US3; US3: header/lines, profile 404, empty orders).
+  backend/src/test/java/com/ipos/cat/ReportControllerWebMvcTest.java
+    GET /api/reports/low-stock RBAC (CAT-US10); ReportingService mocked for context.
+
+
+================================================================================
+ 3. USER STORY STATUS MATRIX (RPT-US1–US5 ONLY)
+================================================================================
+
+  US1  Sales Turnover Reporting              DONE
+  US2  Merchant History Tracking             DONE
+  US3  Individual Merchant Activity Report  DONE
+  US4  Global Invoice Monitoring             NOT STARTED
+  US5  Stock Turnover Analysis               NOT STARTED
+
+Related but tracked elsewhere:
+  CAT-US10 Low-Stock Reporting (RPRT route + /api/reports/low-stock)  DONE — see CATprogress.txt
+
+
+================================================================================
+ 4. VERBATIM USER STORIES (SOURCE OF TRUTH — from userstories.txt)
+================================================================================
+
+The following block is copied **in full** from `userstories.txt` (Operational
+and Financial Reporting epic only). Do not paraphrase acceptance criteria when
+marking work; refer to this section.
+
+
+Epic: Operational and Financial Reporting
+Description: This epic provides management and staff with tools to analyze sales performance, 
+merchant activity and stock turnover through on-screen visualization and printed reports.
+User Story 1: Sales Turnover Reporting
+- Title: As a Manager, I want to generate a turnover report for a specific period so that I can 
+analyse company sales performance. 
+- Acceptance Criteria:
+o The system must allow users to select a specific "Start Date" and "End Date." 
+o The report must display total quantities sold and the total revenue received. 
+o The report must be viewable on-screen and formatted for printing. 
+User Story 2: Merchant History Tracking
+- Title: As a Manager, I want to generate an order history report for a specific merchant so that I 
+can review their purchase/order history. 
+- Acceptance Criteria:
+o The report must include: Order ID, Order Date, Dispatch Date, Total Value and 
+Payment Status (e.g Pending). 
+o The system must include a "Totals" line at the end of the report to summarize the 
+period.
+User Story 3: Individual Merchant Activity Report
+- Title: As a Manager, I want to generate a detailed activity report for a merchant so that I can 
+review their ordering behavior. 
+- Acceptance Criteria:
+o The report header must display the merchant's contact details. 
+o Each order in the list must show: individual items, quantities, item costs, total order 
+cost and any applied discounts. 
+User Story 4: Global Invoice Monitoring
+- Title: As a Manager, I want to view all invoices raised against all merchants for a given period 
+so that I can monitor company-wide billing activity. 
+- Acceptance Criteria:
+o The report must list every invoice issued within the user-defined date range across the 
+entire system. 
+o Each entry must include the Merchant Identifier, Invoice ID, Date, Amount, and 
+Payment Status.
+User Story 5: Stock Turnover Analysis
+- Title: As a Manager, I want to generate a stock turnover report so that I can compare products
+sold against products newly received. 
+- Description: Requires accurate data from both IPOS-SA-ORD and IPOS-SA-CAT ensure these 
+systems are operational before tackling this.
+- Acceptance Criteria:
+o The report must display quantities of products sold versus quantities of products
+received into stock for the selected period. 
+o Data must be accurately pulled from both the IPOS-SA-ORD (sales) and IPOS-SA-CAT 
+(deliveries) records.
+
+
+================================================================================
+ 5. DETAILED USER STORY BREAKDOWN
+================================================================================
+
+------------------------------------------------------------------------------
+ RPT-US1 — Sales Turnover Reporting
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 1.
+
+STATUS: DONE
+
+IMPLEMENTED:
+  • GET `/api/reports/sales-turnover?start=&end=` (LocalDate) — `SalesTurnoverResponse`.
+  • `OrderItemRepository.sumQuantityInPeriodExcludingStatus` and
+    `OrderRepository.sumTotalDueInPeriodExcludingStatus` with `CANCELLED` excluded;
+    date window `[start 00:00, end+1 00:00)` in `Europe/London`.
+  • Revenue metric: sum of `Order.totalDue` (invoiced order totals in period).
+  • UI: `ReportingPlaceholder.jsx` date inputs, Run report, Print; `App.css`
+    `@media print` rules for `.placeholder-page` tables.
+  • Tests: `ReportingServiceTest` (Mockito).
+
+
+------------------------------------------------------------------------------
+ RPT-US2 — Merchant History Tracking
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 2.
+
+STATUS: DONE
+
+IMPLEMENTED:
+  • `orders.dispatched_at` / `Order.dispatchedAt` — set in `OrderService.updateOrderStatus`
+    when transitioning to `DISPATCHED` (first time only). Legacy dispatched rows may
+    have null (UI shows "—").
+  • GET `/api/reports/merchants/{merchantId}/order-history?start=&end=` —
+    `MerchantOrderHistoryResponse` (`rows`, `periodTotalValue`). Rows use invoice
+    `totalDue` when present for amount + payment comparison; status from
+    `PaymentRepository.sumByInvoiceId` vs total due (PENDING / PARTIAL / PAID).
+  • Merchant must exist with role MERCHANT else 404.
+  • UI: merchant dropdown from `GET /api/merchant-profiles`, date range, table,
+    period total row, Print; `App.css` print rules.
+
+REMAINING / NOTES:
+  • Orders in range include all statuses (e.g. CANCELLED) if `placedAt` falls in
+    the window — confirm with product owner if cancelled orders should be hidden.
+
+
+------------------------------------------------------------------------------
+ RPT-US3 — Individual Merchant Activity Report
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 3.
+
+STATUS: DONE
+
+IMPLEMENTED:
+  • GET `/api/reports/merchants/{merchantId}/activity?start=&end=` —
+    `MerchantActivityReportResponse` with `MerchantActivityHeaderDto` and
+    `List<MerchantActivityOrderDto>`. Header from `MerchantProfileRepository.findByUserId`
+    (404 if profile missing). Same date window and merchant guards as RPT-US2.
+  • Line totals: `unitPriceAtOrder * quantity`, scale 2, HALF_UP.
+  • DTOs: `MerchantActivityLineDto`, `MerchantActivityOrderDto`, etc.
+  • UI: Reporting page section with contact block and per-order line tables + discount summary.
+
+REMAINING / NOTES:
+  • Pagination not implemented (optional for large histories).
+
+
+------------------------------------------------------------------------------
+ RPT-US4 — Global Invoice Monitoring
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 4.
+
+STATUS: NOT STARTED
+
+ACCEPTANCE CRITERIA MAPPING:
+  • All invoices in date range: filter `Invoice.issuedAt` between start/end
+    (Instant range).
+  • Columns: Merchant Identifier (user id or merchant name snapshot),
+    Invoice ID (`id` or `invoiceNumber`), Date (`issuedAt`), Amount (`totalDue`
+    or outstanding — story says “Amount”; confirm), Payment Status (paid /
+    partial / unpaid from payments sum vs `totalDue`).
+
+SUGGESTED IMPLEMENTATION NOTES:
+  • Distinct from MERCHANT-scoped invoice list — this is staff global view
+    with explicit period filter.
+  • Endpoint e.g. GET `/api/reports/invoices?start=&end=`
+
+
+------------------------------------------------------------------------------
+ RPT-US5 — Stock Turnover Analysis
+------------------------------------------------------------------------------
+
+Full story text: section 4 — User Story 5.
+
+STATUS: NOT STARTED
+
+ACCEPTANCE CRITERIA MAPPING:
+  • **Sold quantities (ORD):** Sum `OrderItem.quantity` per product for orders
+    in period (exclude CANCELLED; confirm if DISPATCHED-only is required).
+  • **Received quantities (CAT):** Sum `StockDelivery.quantityReceived` per
+    product where `deliveryDate` is in period (already recorded by CAT-US7).
+  • Join or side-by-side by `product_id` / product code for the selected period.
+
+SUGGESTED IMPLEMENTATION NOTES:
+  • Possibly two aggregate queries merged in Java or one native SQL with
+    UNION/GROUP BY — watch performance on large datasets.
+  • Endpoint e.g. GET `/api/reports/stock-turnover?start=&end=`
+  • DTO per product: `{ productId, productCode, quantitySold, quantityReceived }`
+
+
+================================================================================
+ 6. TESTING COVERAGE (RPT)
+================================================================================
+
+  ReportingServiceTest.java — 13 Mockito tests (RPT-US1–US3); included in IposTestSuite.
+
+  ReportControllerWebMvcTest — GET /api/reports/low-stock (CAT-US10) RBAC only;
+    `ReportingService` is `@MockitoBean` so the slice loads after RPT endpoints
+    were added to ReportController.
+
+  Optional follow-up: WebMvc tests for `/api/reports/sales-turnover` and
+    `/merchants/{id}/order-history` (same MANAGER/ADMIN pattern as low-stock).
+
+
+================================================================================
+ 7. CROSS-PACKAGE NOTES
+================================================================================
+
+  • **CAT-US10** is implemented and documented under CATprogress.txt; this
+    RPT document does not duplicate its full breakdown.
+
+  • **ORD** supplies orders, invoices, payments — required for RPT-US1, US2,
+    US3, US4, US5 (sales side).
+
+  • **CAT** supplies `StockDelivery` — required for RPT-US5 (receipts side).
+
+  • **Printing:** `App.css` defines `@media print` helpers (`.no-print`, table
+    borders) for the Reporting page; reuse for RPT-US3–US5.
+
+  • **Currency:** Domain uses GBP in UI (see CATprogress); keep report DTOs
+    consistent with `BigDecimal` scale used in entities.
+
+
+================================================================================
+ END OF RPT PROGRESS REPORT
+================================================================================

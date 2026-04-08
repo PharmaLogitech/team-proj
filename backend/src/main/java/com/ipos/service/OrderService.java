@@ -137,6 +137,9 @@ public class OrderService {
         }
 
         order.setStatus(newStatus);
+        if (newStatus == Order.OrderStatus.DISPATCHED && order.getDispatchedAt() == null) {
+            order.setDispatchedAt(Instant.now());
+        }
         return orderRepository.save(order);
     }
 

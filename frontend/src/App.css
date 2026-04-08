@@ -470,3 +470,45 @@ body {
   border-top: 2px solid #d1d5db;
   padding-top: 0.6rem;
 }
+
+/* ── Print (RPT-US1 / RPT-US2 — reports viewable on-screen and for printing) ─ */
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+
+  .placeholder-page {
+    max-width: none;
+    padding: 0;
+  }
+
+  .placeholder-page table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .placeholder-page th,
+  .placeholder-page td {
+    border: 1px solid #333;
+    padding: 0.35rem 0.5rem;
+    font-size: 10pt;
+  }
+
+  .placeholder-page h2 {
+    font-size: 14pt;
+  }
+
+  .placeholder-page h3 {
+    font-size: 12pt;
+    page-break-after: avoid;
+  }
+
+  .placeholder-page section {
+    page-break-inside: avoid;
+  }
+}

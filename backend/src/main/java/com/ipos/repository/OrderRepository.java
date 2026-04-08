@@ -72,4 +72,41 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("from") Instant from,
             @Param("to") Instant to,
             @Param("excludeStatus") Order.OrderStatus excludeStatus);
+
+    /**
+     * Sum of totalDue for non-cancelled orders placed in [from, to) (RPT-US1).
+     */
+    @Query("SELECT COALESCE(SUM(o.totalDue), 0) FROM Order o "
+            + "WHERE o.placedAt >= :from AND o.placedAt < :to "
+            + "AND o.status <> :excludeStatus")
+    BigDecimal sumTotalDueInPeriodExcludingStatus(
+            @Param("from") Instant from,
+            @Param("to") Instant to,
+            @Param("excludeStatus") Order.OrderStatus excludeStatus);
+
+    /**
+     * Merchant orders placed in [from, to), oldest first (RPT-US2).
+     */
+    @Query("SELECT o FROM Order o WHERE o.merchant.id = :merchantId "
+            + "AND o.placedAt >= :from AND o.placedAt < :to "
+            + "ORDER BY o.placedAt ASC, o.id ASC")
+    List<Order> findByMerchantIdAndPlacedAtRange(
+            @Param("merchantId") Long merchantId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
+
+    /**
+     * Same date range as {@link #findByMerchantIdAndPlacedAtRange}, with items and products
+     * eagerly fetched (RPT-US3) to avoid N+1 queries when building line-level activity.
+     */
+    @Query("SELECT DISTINCT o FROM Order o "
+            + "JOIN FETCH o.items i "
+            + "JOIN FETCH i.product "
+            + "WHERE o.merchant.id = :merchantId "
+            + "AND o.placedAt >= :from AND o.placedAt < :to "
+            + "ORDER BY o.placedAt ASC, o.id ASC")
+    List<Order> findByMerchantIdAndPlacedAtRangeWithItemsAndProducts(
+            @Param("merchantId") Long merchantId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
 }
