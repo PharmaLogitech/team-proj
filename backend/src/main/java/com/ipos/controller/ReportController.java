@@ -3,7 +3,7 @@
  * ║  WHAT: REST Controller for the Reporting package (IPOS-SA-RPRT).            ║
  * ║                                                                              ║
  * ║  WHY:  Centralises all report-generation endpoints under /api/reports.       ║
- * ║        Low-stock (CAT-US10); RPT-US1–US3 report endpoints.                   ║
+ * ║        Low-stock (CAT-US10); RPT-US1–US5 report endpoints.                 ║
  * ║                                                                              ║
  * ║  ACCESS CONTROL (ACC-US4 — RBAC):                                           ║
  * ║        SecurityConfig.java secures /api/reports/** for MANAGER and ADMIN.   ║
@@ -20,10 +20,12 @@
  */
 package com.ipos.controller;
 
+import com.ipos.dto.GlobalInvoiceReportResponse;
 import com.ipos.dto.LowStockProductDto;
 import com.ipos.dto.MerchantActivityReportResponse;
 import com.ipos.dto.MerchantOrderHistoryResponse;
 import com.ipos.dto.SalesTurnoverResponse;
+import com.ipos.dto.StockTurnoverReportResponse;
 import com.ipos.service.ProductService;
 import com.ipos.service.ReportingService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -71,6 +73,26 @@ public class ReportController {
             @RequestParam LocalDate start,
             @RequestParam LocalDate end) {
         return reportingService.getSalesTurnover(start, end);
+    }
+
+    /**
+     * GET /api/reports/invoices — RPT-US4 (MANAGER/ADMIN via /api/reports/**).
+     */
+    @GetMapping("/invoices")
+    public GlobalInvoiceReportResponse getGlobalInvoiceReport(
+            @RequestParam LocalDate start,
+            @RequestParam LocalDate end) {
+        return reportingService.getGlobalInvoiceReport(start, end);
+    }
+
+    /**
+     * GET /api/reports/stock-turnover — RPT-US5 (MANAGER/ADMIN via /api/reports/**).
+     */
+    @GetMapping("/stock-turnover")
+    public StockTurnoverReportResponse getStockTurnover(
+            @RequestParam LocalDate start,
+            @RequestParam LocalDate end) {
+        return reportingService.getStockTurnover(start, end);
     }
 
     /**

@@ -55,7 +55,7 @@ Configure `backend/src/main/resources/application.properties` with your MySQL cr
 | Catalogue & Inventory | IPOS-SA-CAT | ⚠️ Mostly Complete (US1 partial) |
 | Orders & Fulfillment | IPOS-SA-ORD | ✅ Complete (US1–US6 all done) |
 | Merchant Profiles | IPOS-SA-MER | ✅ Complete |
-| Reporting | IPOS-SA-RPRT | ⚠️ Partial (low-stock report done; RPT-US1–5 remain) |
+| Reporting | IPOS-SA-RPRT | ✅ Complete (CAT-US10 low-stock + RPT-US1–US5) |
 
 ### Backend Layers (`backend/src/main/java/com/ipos/`)
 
@@ -120,6 +120,11 @@ Standard Spring Boot layered architecture: **Controller → Service → Reposito
 | `/api/invoices/{id}/payments` | POST | ADMIN only (ORD-US6 payment recording) |
 | `/api/merchant-financials/balance` | GET | MERCHANT only (ORD-US3 outstanding balance) |
 | `/api/reports/low-stock` | GET | MANAGER, ADMIN (CAT-US10 real-time low-stock report) |
+| `/api/reports/sales-turnover` | GET | MANAGER, ADMIN (RPT-US1) |
+| `/api/reports/invoices` | GET | MANAGER, ADMIN (RPT-US4 global invoice monitoring) |
+| `/api/reports/stock-turnover` | GET | MANAGER, ADMIN (RPT-US5) |
+| `/api/reports/merchants/{id}/order-history` | GET | MANAGER, ADMIN (RPT-US2) |
+| `/api/reports/merchants/{id}/activity` | GET | MANAGER, ADMIN (RPT-US3) |
 
 ### Frontend Structure (`frontend/src/`)
 
@@ -142,7 +147,7 @@ No router library — uses simple `currentPage` state in App.jsx.
 - `catalogue` → `Catalogue.jsx` — product listing table with role-aware columns; ADMIN tools: init, create, edit (with minStockThreshold), delete (Yes/No modal), "+ Stock" delivery modal (CAT-US7); low-stock warning in table (CAT-US8/US9).
 - `order` → `OrderForm.jsx` — multi-line order placement with discount breakdown; orders tracking table ("My Orders" for MERCHANT, "All Orders" for staff) with status badges, staff action buttons, and 15s auto-polling (ORD-US1/US2).
 - `invoices` → `Invoices.jsx` — invoice listing (role-scoped), invoice detail with lines and payments, MERCHANT balance summary card (ORD-US3), ADMIN payment recording form (ORD-US6).
-- `reporting` → `ReportingPlaceholder.jsx` — low-stock report table (CAT-US10) + planned RPT-US1–5 stubs.
+- `reporting` → `ReportingPlaceholder.jsx` — low-stock (CAT-US10) + RPT-US1–US5 operational reports (date ranges, printable tables).
 - `accounts` → `MerchantCreate.jsx` — admin form for atomic merchant+profile creation.
 - `merchants` → `MerchantManagement.jsx` — edit profiles, standing transitions, month-close settlement.
 
@@ -157,6 +162,11 @@ No router library — uses simple `currentPage` state in App.jsx.
 | `deleteProduct(id)` | DELETE | `/api/products/{id}` |
 | `recordDelivery(productId, {deliveryDate, quantityReceived, supplierReference})` | POST | `/api/products/{id}/deliveries` |
 | `getLowStockReport()` | GET | `/api/reports/low-stock` |
+| `getSalesTurnoverReport({ start, end })` | GET | `/api/reports/sales-turnover` |
+| `getGlobalInvoiceReport({ start, end })` | GET | `/api/reports/invoices` |
+| `getStockTurnoverReport({ start, end })` | GET | `/api/reports/stock-turnover` |
+| `getMerchantOrderHistory(merchantId, { start, end })` | GET | `/api/reports/merchants/{id}/order-history` |
+| `getMerchantActivityReport(merchantId, { start, end })` | GET | `/api/reports/merchants/{id}/activity` |
 | `getCatalogueStatus()` | GET | `/api/catalogue/status` |
 | `initializeCatalogue()` | POST | `/api/catalogue/initialize` |
 | `getUsers()` | GET | `/api/users` |
@@ -226,17 +236,22 @@ A persistent low-stock warning banner is displayed below the navigation bar for 
 
 ## Tests
 
-96 tests total across 7 test classes. Test profile uses H2 in-memory DB with bootstrap disabled (`application-test.properties`).
+127 tests total across 11 test classes (some source files contain multiple nested test classes). Test profile uses H2 in-memory DB with bootstrap disabled (`application-test.properties`).
 
 | Test Class | Tests | Coverage |
 |------------|-------|---------|
 | `com/ipos/cat/CatalogueCatTest.java` | 31 Mockito unit tests | CAT-US2–US10: product CRUD, search, stock masking, delivery recording, threshold validation, audit logging, low-stock query |
 | `com/ipos/cat/ProductControllerCatalogueCatWebMvcTest.java` | 15 WebMvc slice tests | DTO validation (400), success paths (200/201/204), role enforcement (403), CAT-US5/US6/US7/US8 |
-| `com/ipos/cat/ReportControllerWebMvcTest.java` | 4 WebMvc slice tests | CAT-US10: MANAGER 200, ADMIN 200, MERCHANT 403, unauthenticated 401 |
+| `com/ipos/cat/ReportControllerWebMvcTest.java` | 8 WebMvc slice tests | CAT-US10 low-stock RBAC; RPT-US4/US5 invoice + stock-turnover RBAC (`ReportingService` mocked; lives in `CatalogueCatTest.java`) |
 | `com/ipos/ord/ORDOrderTest.java` | 9 Mockito unit tests | ORD-US1: placeOrder ACCEPTED status, empty/null items rejection, credit limit net of payments; ORD-US2: findOrdersForActor scoping, updateOrderStatus transitions |
 | `com/ipos/ord/OrderControllerWebMvcTest.java` | 5 WebMvc slice tests | ORD-US2: GET /api/orders role-scoped, PUT status RBAC (MANAGER 200, MERCHANT 403, unauth 401) |
-| `com/ipos/ord/ORDInvoicePaymentTest.java` | 4 Mockito + 3 Mockito + 5 WebMvc | ORD-US5: invoice snapshot, idempotency, lines, numbering; ORD-US6: payment validation; WebMvc: invoice/payment/balance RBAC |
+| `com/ipos/ord/ORDInvoicePaymentTest.java` | 4 + 3 + 5 tests (nested classes in same file) | ORD-US5/ORD-US6 Mockito; `PaymentServiceTest`; `InvoicePaymentWebMvcTest` WebMvc RBAC |
 | `com/ipos/service/MerchantAccountServiceTest.java` | 20 Mockito unit tests | ACC-US1 merchant creation, tier validation, discount calculations, standing guards, credit limits, ORD-US1 merchant isolation |
+| `com/ipos/service/ReportingServiceTest.java` | 21 Mockito unit tests | RPT-US1–US5 report service behaviour |
+| `com/ipos/service/ProductServiceTest.java` | 6 Mockito unit tests | Product service unit tests |
+| `com/ipos/ord/PaymentServiceTest.java` | 3 Mockito unit tests | Payment service |
+
+`IposTestSuite.java` aggregates a subset of these for IDE suite runs (see `@SelectClasses`).
 
 There are no frontend tests.
 
@@ -244,7 +259,7 @@ There are no frontend tests.
 
 ## User Story Backlog (What's Left)
 
-Full status in `ACCprogress.txt` (ACC — complete), `CATprogress.txt` (CAT), and `ORDprogress.txt` (ORD — US1–US6 complete).
+Full status in `ACCprogress.txt` (ACC — complete), `CATprogress.txt` (CAT), `ORDprogress.txt` (ORD — US1–US6 complete), and `RPTprogress.txt` (RPT — US1–US5 complete).
 
 **CAT (Catalogue & Inventory):**
 - **CAT-US2–US10**: Complete. US9 persistent low-stock banner for ADMIN; US10 real-time low-stock report at `/api/reports/low-stock`.
@@ -252,6 +267,9 @@ Full status in `ACCprogress.txt` (ACC — complete), `CATprogress.txt` (CAT), an
 
 **ORD (Orders):**
 - **ORD-US1–US6**: All complete. Multi-line order placement, status lifecycle tracking, automated stock reduction, invoice generation with merchant/VAT snapshots, payment recording (Bank Transfer/Card/Cheque), and merchant outstanding balance with due-date elapsed tracking.
+
+**RPT (Reporting):**
+- **RPT-US1–US5**: Complete per `RPTprogress.txt` (sales turnover, merchant history, merchant activity, global invoices, stock turnover; plus CAT-US10 low-stock on the reporting route).
 
 ---
 

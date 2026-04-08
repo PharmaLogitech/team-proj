@@ -471,7 +471,7 @@ body {
   padding-top: 0.6rem;
 }
 
-/* ── Print (RPT-US1 / RPT-US2 — reports viewable on-screen and for printing) ─ */
+/* ── Print — reporting tables viewable on-screen and for printing ─ */
 
 @media print {
   .no-print {

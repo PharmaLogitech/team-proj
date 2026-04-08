@@ -28,6 +28,8 @@
  * ║    3) ReportControllerWebMvcTest (WebMvc slice):                            ║
  * ║       - CAT-US10 GET /api/reports/low-stock MANAGER → 200                  ║
  * ║       - CAT-US10 GET /api/reports/low-stock MERCHANT → 403                 ║
+ * ║       - RPT-US4 GET /api/reports/invoices MANAGER → 200, MERCHANT → 403    ║
+ * ║       - RPT-US5 GET /api/reports/stock-turnover MANAGER → 200, MERCHANT → 403║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.cat;
@@ -37,7 +39,11 @@ import com.ipos.controller.ProductController;
 import com.ipos.controller.ReportController;
 import com.ipos.dto.CatalogueProductDto;
 import com.ipos.dto.CreateProductRequest;
+import com.ipos.dto.GlobalInvoiceReportResponse;
+import com.ipos.dto.GlobalInvoiceRowDto;
 import com.ipos.dto.LowStockProductDto;
+import com.ipos.dto.StockTurnoverReportResponse;
+import com.ipos.dto.StockTurnoverRowDto;
 import com.ipos.dto.RecordStockDeliveryRequest;
 import com.ipos.dto.StockDeliveryResponse;
 import com.ipos.dto.UpdateProductRequest;
@@ -913,7 +919,7 @@ class ProductControllerCatalogueCatWebMvcTest {
  */
 @WebMvcTest(controllers = ReportController.class)
 @Import(SecurityConfig.class)
-@DisplayName("ReportController — WebMvc slice (CAT-US10)")
+@DisplayName("ReportController — WebMvc slice (CAT-US10, RPT-US4, RPT-US5)")
 @SuppressWarnings({"null", "unused"})
 class ReportControllerWebMvcTest {
 
@@ -970,5 +976,68 @@ class ReportControllerWebMvcTest {
     void lowStockReport_unauthenticated_returns401() throws Exception {
         mockMvc.perform(get("/api/reports/low-stock"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── RPT-US4: GET /api/reports/invoices ───────────────────────────────────
+
+    @Test
+    @DisplayName("GET /api/reports/invoices as MANAGER → 200 with rows")
+    void globalInvoices_manager_returns200() throws Exception {
+        GlobalInvoiceRowDto row = new GlobalInvoiceRowDto();
+        row.setInvoiceId(1L);
+        row.setInvoiceNumber("INV-2026-00001");
+        row.setMerchantId(2L);
+        row.setMerchantUsername("m1");
+        row.setMerchantName("Shop");
+        row.setPaymentStatus("PENDING");
+        when(reportingService.getGlobalInvoiceReport(any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(new GlobalInvoiceReportResponse(List.of(row)));
+
+        mockMvc.perform(get("/api/reports/invoices")
+                        .param("start", "2026-04-01")
+                        .param("end", "2026-04-30")
+                        .with(user("manager").roles("MANAGER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[0].invoiceNumber").value("INV-2026-00001"))
+                .andExpect(jsonPath("$.rows[0].paymentStatus").value("PENDING"));
+    }
+
+    @Test
+    @DisplayName("GET /api/reports/invoices as MERCHANT → 403")
+    void globalInvoices_merchant_returns403() throws Exception {
+        mockMvc.perform(get("/api/reports/invoices")
+                        .param("start", "2026-04-01")
+                        .param("end", "2026-04-30")
+                        .with(user("merchant").roles("MERCHANT")))
+                .andExpect(status().isForbidden());
+    }
+
+    // ── RPT-US5: GET /api/reports/stock-turnover ─────────────────────────────
+
+    @Test
+    @DisplayName("GET /api/reports/stock-turnover as MANAGER → 200 with rows")
+    void stockTurnover_manager_returns200() throws Exception {
+        StockTurnoverRowDto row = new StockTurnoverRowDto(1L, "SKU1", 5L, 12L);
+        when(reportingService.getStockTurnover(any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(new StockTurnoverReportResponse(List.of(row)));
+
+        mockMvc.perform(get("/api/reports/stock-turnover")
+                        .param("start", "2026-04-01")
+                        .param("end", "2026-04-30")
+                        .with(user("manager").roles("MANAGER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows[0].productCode").value("SKU1"))
+                .andExpect(jsonPath("$.rows[0].quantitySold").value(5))
+                .andExpect(jsonPath("$.rows[0].quantityReceived").value(12));
+    }
+
+    @Test
+    @DisplayName("GET /api/reports/stock-turnover as MERCHANT → 403")
+    void stockTurnover_merchant_returns403() throws Exception {
+        mockMvc.perform(get("/api/reports/stock-turnover")
+                        .param("start", "2026-04-01")
+                        .param("end", "2026-04-30")
+                        .with(user("merchant").roles("MERCHANT")))
+                .andExpect(status().isForbidden());
     }
 }

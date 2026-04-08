@@ -1,13 +1,15 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Mockito unit tests for ReportingService (RPT-US1–US3).              ║
+ * ║  WHAT: Mockito unit tests for ReportingService (RPT-US1–US5).              ║
  * ║                                                                              ║
  * ║  HOW:  Same style as MerchantAccountServiceTest — no Spring context.         ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.service;
 
+import com.ipos.dto.GlobalInvoiceReportResponse;
 import com.ipos.dto.MerchantActivityReportResponse;
+import com.ipos.dto.StockTurnoverReportResponse;
 import com.ipos.dto.MerchantOrderHistoryResponse;
 import com.ipos.dto.SalesTurnoverResponse;
 import com.ipos.entity.Invoice;
@@ -16,11 +18,15 @@ import com.ipos.entity.Order;
 import com.ipos.entity.OrderItem;
 import com.ipos.entity.Product;
 import com.ipos.entity.User;
+import com.ipos.repository.InvoiceGlobalReportProjection;
 import com.ipos.repository.InvoiceRepository;
 import com.ipos.repository.MerchantProfileRepository;
+import com.ipos.repository.OrderItemQtySoldProjection;
 import com.ipos.repository.OrderItemRepository;
 import com.ipos.repository.OrderRepository;
 import com.ipos.repository.PaymentRepository;
+import com.ipos.repository.StockDeliveryQtyReceivedProjection;
+import com.ipos.repository.StockDeliveryRepository;
 import com.ipos.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,11 +47,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("ReportingService (RPT-US1 / RPT-US2 / RPT-US3)")
+@DisplayName("ReportingService (RPT-US1–US5)")
 public class ReportingServiceTest {
 
     private static final LocalDate START = LocalDate.of(2026, 4, 1);
@@ -63,6 +70,8 @@ public class ReportingServiceTest {
     private PaymentRepository paymentRepository;
     @Mock
     private MerchantProfileRepository merchantProfileRepository;
+    @Mock
+    private StockDeliveryRepository stockDeliveryRepository;
 
     @InjectMocks
     private ReportingService reportingService;
@@ -79,7 +88,7 @@ public class ReportingServiceTest {
     void salesTurnover_aggregatesRepositorySums() {
         when(orderItemRepository.sumQuantityInPeriodExcludingStatus(
                 any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
-                .thenReturn(new BigDecimal("12"));
+                .thenReturn(12L);
         when(orderRepository.sumTotalDueInPeriodExcludingStatus(
                 any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
                 .thenReturn(new BigDecimal("450.00"));
@@ -96,7 +105,7 @@ public class ReportingServiceTest {
     void salesTurnover_excludesCancelled_viaCancelledStatusArgument() {
         when(orderItemRepository.sumQuantityInPeriodExcludingStatus(
                 any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
-                .thenReturn(BigDecimal.ZERO);
+                .thenReturn(0L);
         when(orderRepository.sumTotalDueInPeriodExcludingStatus(
                 any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
                 .thenReturn(BigDecimal.ZERO);
@@ -114,7 +123,7 @@ public class ReportingServiceTest {
     void salesTurnover_emptyPeriod_returnsZeros() {
         when(orderItemRepository.sumQuantityInPeriodExcludingStatus(
                 any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
-                .thenReturn(BigDecimal.ZERO);
+                .thenReturn(0L);
         when(orderRepository.sumTotalDueInPeriodExcludingStatus(
                 any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
                 .thenReturn(BigDecimal.ZERO);
@@ -344,5 +353,141 @@ public class ReportingServiceTest {
 
         assertEquals("solo@example.com", r.getHeader().getContactEmail());
         assertEquals(0, r.getOrders().size());
+    }
+
+    @Test
+    @DisplayName("RPT-US4: global invoice report maps projection rows to DTOs with payment status")
+    void globalInvoices_mapsRowsAndPaymentStatus() {
+        InvoiceGlobalReportProjection p = mock(InvoiceGlobalReportProjection.class);
+        when(p.getInvoiceId()).thenReturn(10L);
+        when(p.getInvoiceNumber()).thenReturn("INV-2026-00001");
+        when(p.getIssuedAt()).thenReturn(Instant.parse("2026-04-10T12:00:00Z"));
+        when(p.getTotalDue()).thenReturn(new BigDecimal("100.00"));
+        when(p.getMerchantId()).thenReturn(5L);
+        when(p.getMerchantUsername()).thenReturn("acme");
+        when(p.getMerchantName()).thenReturn("Acme Ltd");
+        when(p.getPaidSum()).thenReturn(BigDecimal.ZERO);
+
+        when(invoiceRepository.findGlobalInvoiceReport(any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(p));
+
+        GlobalInvoiceReportResponse r = reportingService.getGlobalInvoiceReport(START, END);
+
+        assertEquals(1, r.getRows().size());
+        assertEquals(10L, r.getRows().get(0).getInvoiceId());
+        assertEquals("INV-2026-00001", r.getRows().get(0).getInvoiceNumber());
+        assertEquals(5L, r.getRows().get(0).getMerchantId());
+        assertEquals("acme", r.getRows().get(0).getMerchantUsername());
+        assertEquals("Acme Ltd", r.getRows().get(0).getMerchantName());
+        assertEquals(0, new BigDecimal("100.00").compareTo(r.getRows().get(0).getAmount()));
+        assertEquals(ReportingService.PAYMENT_PENDING, r.getRows().get(0).getPaymentStatus());
+    }
+
+    @Test
+    @DisplayName("RPT-US4: empty invoice list returns empty rows")
+    void globalInvoices_empty_returnsEmptyRows() {
+        when(invoiceRepository.findGlobalInvoiceReport(any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of());
+
+        GlobalInvoiceReportResponse r = reportingService.getGlobalInvoiceReport(START, END);
+
+        assertEquals(0, r.getRows().size());
+    }
+
+    @Test
+    @DisplayName("RPT-US4: delegates to repository with instant range")
+    void globalInvoices_callsRepositoryWithRange() {
+        when(invoiceRepository.findGlobalInvoiceReport(any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of());
+
+        reportingService.getGlobalInvoiceReport(START, END);
+
+        verify(invoiceRepository).findGlobalInvoiceReport(any(Instant.class), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("RPT-US4: start after end throws 400")
+    void globalInvoices_startAfterEnd_throws400() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> reportingService.getGlobalInvoiceReport(
+                        LocalDate.of(2026, 5, 1), LocalDate.of(2026, 4, 1)));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("RPT-US5: merges sold and received; sorts by product code")
+    void stockTurnover_mergesAndSorts() {
+        OrderItemQtySoldProjection s1 = mock(OrderItemQtySoldProjection.class);
+        when(s1.getProductId()).thenReturn(2L);
+        when(s1.getProductCode()).thenReturn("B-ITEM");
+        when(s1.getQtySold()).thenReturn(5L);
+        OrderItemQtySoldProjection s2 = mock(OrderItemQtySoldProjection.class);
+        when(s2.getProductId()).thenReturn(1L);
+        when(s2.getProductCode()).thenReturn("A-ITEM");
+        when(s2.getQtySold()).thenReturn(3L);
+
+        StockDeliveryQtyReceivedProjection r1 = mock(StockDeliveryQtyReceivedProjection.class);
+        when(r1.getProductId()).thenReturn(1L);
+        when(r1.getQtyReceived()).thenReturn(10L);
+
+        when(orderItemRepository.sumQuantitySoldByProductExcludingStatus(
+                any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
+                .thenReturn(List.of(s1, s2));
+        when(stockDeliveryRepository.sumQuantityReceivedByProductBetween(eq(START), eq(END)))
+                .thenReturn(List.of(r1));
+
+        StockTurnoverReportResponse r = reportingService.getStockTurnover(START, END);
+
+        assertEquals(2, r.getRows().size());
+        assertEquals("A-ITEM", r.getRows().get(0).getProductCode());
+        assertEquals(3L, r.getRows().get(0).getQuantitySold());
+        assertEquals(10L, r.getRows().get(0).getQuantityReceived());
+        assertEquals("B-ITEM", r.getRows().get(1).getProductCode());
+        assertEquals(5L, r.getRows().get(1).getQuantitySold());
+        assertEquals(0L, r.getRows().get(1).getQuantityReceived());
+    }
+
+    @Test
+    @DisplayName("RPT-US5: received-only product appears with zero sold")
+    void stockTurnover_receivedOnly() {
+        StockDeliveryQtyReceivedProjection r = mock(StockDeliveryQtyReceivedProjection.class);
+        when(r.getProductId()).thenReturn(9L);
+        when(r.getProductCode()).thenReturn("NEW");
+        when(r.getQtyReceived()).thenReturn(20L);
+
+        when(orderItemRepository.sumQuantitySoldByProductExcludingStatus(
+                any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
+                .thenReturn(List.of());
+        when(stockDeliveryRepository.sumQuantityReceivedByProductBetween(eq(START), eq(END)))
+                .thenReturn(List.of(r));
+
+        StockTurnoverReportResponse resp = reportingService.getStockTurnover(START, END);
+
+        assertEquals(1, resp.getRows().size());
+        assertEquals(0L, resp.getRows().get(0).getQuantitySold());
+        assertEquals(20L, resp.getRows().get(0).getQuantityReceived());
+    }
+
+    @Test
+    @DisplayName("RPT-US5: empty period yields empty rows")
+    void stockTurnover_empty() {
+        when(orderItemRepository.sumQuantitySoldByProductExcludingStatus(
+                any(Instant.class), any(Instant.class), eq(Order.OrderStatus.CANCELLED)))
+                .thenReturn(List.of());
+        when(stockDeliveryRepository.sumQuantityReceivedByProductBetween(eq(START), eq(END)))
+                .thenReturn(List.of());
+
+        StockTurnoverReportResponse r = reportingService.getStockTurnover(START, END);
+
+        assertEquals(0, r.getRows().size());
+    }
+
+    @Test
+    @DisplayName("RPT-US5: start after end throws 400")
+    void stockTurnover_startAfterEnd_throws400() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> reportingService.getStockTurnover(
+                        LocalDate.of(2026, 5, 1), LocalDate.of(2026, 4, 1)));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
     }
 }

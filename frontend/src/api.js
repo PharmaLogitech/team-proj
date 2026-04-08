@@ -229,6 +229,40 @@ export async function getSalesTurnoverReport({ start, end }) {
 }
 
 /**
+ * Global invoice monitoring for a date range (RPT-US4).
+ * GET /api/reports/invoices?start=&end=
+ * → { rows: [{ merchantId, merchantUsername, merchantName, invoiceId, invoiceNumber, issuedAt, amount, paymentStatus }] }
+ *
+ * ACCESS: MANAGER, ADMIN.
+ */
+export async function getGlobalInvoiceReport({ start, end }) {
+  const params = new URLSearchParams({ start, end });
+  const response = await fetchWithAuth(`${API_BASE}/reports/invoices?${params}`);
+  const body = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
+}
+
+/**
+ * Stock turnover: quantities sold vs received per product (RPT-US5).
+ * GET /api/reports/stock-turnover?start=&end=
+ * → { rows: [{ productId, productCode, quantitySold, quantityReceived }] }
+ *
+ * ACCESS: MANAGER, ADMIN.
+ */
+export async function getStockTurnoverReport({ start, end }) {
+  const params = new URLSearchParams({ start, end });
+  const response = await fetchWithAuth(`${API_BASE}/reports/stock-turnover?${params}`);
+  const body = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return body;
+}
+
+/**
  * Merchant order history for a date range (RPT-US2).
  * GET /api/reports/merchants/{merchantId}/order-history?start=&end=
  * → { rows: [...], periodTotalValue }

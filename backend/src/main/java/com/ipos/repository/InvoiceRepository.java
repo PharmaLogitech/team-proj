@@ -20,6 +20,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,6 +35,21 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     /** Staff listing — all invoices, newest first. */
     List<Invoice> findAllByOrderByIssuedAtDesc();
+
+    /**
+     * RPT-US4 — invoices issued in [from, to) with merchant identity and paid total per row
+     * (correlated subquery avoids N+1 payment sums).
+     */
+    @Query("SELECT i.id AS invoiceId, i.invoiceNumber AS invoiceNumber, i.issuedAt AS issuedAt, "
+            + "i.totalDue AS totalDue, m.id AS merchantId, m.username AS merchantUsername, "
+            + "i.merchantName AS merchantName, "
+            + "(SELECT COALESCE(SUM(p.amount), 0) FROM Payment p WHERE p.invoice.id = i.id) AS paidSum "
+            + "FROM Invoice i JOIN i.merchant m "
+            + "WHERE i.issuedAt >= :from AND i.issuedAt < :to "
+            + "ORDER BY i.issuedAt ASC, i.invoiceNumber ASC")
+    List<InvoiceGlobalReportProjection> findGlobalInvoiceReport(
+            @Param("from") Instant from,
+            @Param("to") Instant to);
 
     /**
      * Sum of totalDue across all invoices for a merchant.

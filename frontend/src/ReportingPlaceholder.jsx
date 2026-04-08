@@ -1,10 +1,10 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Reporting page for the IPOS-SA-RPRT package.                         ║
+ * ║  WHAT: Reporting page — low-stock and operational reports.                 ║
  * ║                                                                              ║
- * ║  WHY:  CAT-US10 low-stock; RPT-US1–US3 reports. Printable (App.css print). ║
+ * ║  WHY:  Printable tables (App.css print rules).                              ║
  * ║                                                                              ║
- * ║  ACCESS CONTROL (ACC-US4): MANAGER, ADMIN — rbac.js + /api/reports/**     ║
+ * ║  ACCESS: MANAGER, ADMIN — rbac.js + /api/reports/**                         ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 
@@ -12,6 +12,8 @@ import { useState, useEffect, useCallback } from "react";
 import {
   getLowStockReport,
   getSalesTurnoverReport,
+  getGlobalInvoiceReport,
+  getStockTurnoverReport,
   getMerchantOrderHistory,
   getMerchantActivityReport,
   getMerchantProfiles,
@@ -65,6 +67,18 @@ function ReportingPlaceholder() {
   const [activity, setActivity] = useState(null);
   const [maLoading, setMaLoading] = useState(false);
   const [maError, setMaError] = useState(null);
+
+  const [giStart, setGiStart] = useState(defaults.start);
+  const [giEnd, setGiEnd] = useState(defaults.end);
+  const [globalInvoices, setGlobalInvoices] = useState(null);
+  const [giLoading, setGiLoading] = useState(false);
+  const [giError, setGiError] = useState(null);
+
+  const [stoStart, setStoStart] = useState(defaults.start);
+  const [stoEnd, setStoEnd] = useState(defaults.end);
+  const [stockTurnover, setStockTurnover] = useState(null);
+  const [stoLoading, setStoLoading] = useState(false);
+  const [stoError, setStoError] = useState(null);
 
   const fetchLowStock = useCallback(async () => {
     setLowStockLoading(true);
@@ -161,11 +175,39 @@ function ReportingPlaceholder() {
     }
   };
 
+  const runGlobalInvoices = async () => {
+    setGiLoading(true);
+    setGiError(null);
+    setGlobalInvoices(null);
+    try {
+      const data = await getGlobalInvoiceReport({ start: giStart, end: giEnd });
+      setGlobalInvoices(data);
+    } catch (err) {
+      setGiError(err.message || "Failed to load global invoice report.");
+    } finally {
+      setGiLoading(false);
+    }
+  };
+
+  const runStockTurnover = async () => {
+    setStoLoading(true);
+    setStoError(null);
+    setStockTurnover(null);
+    try {
+      const data = await getStockTurnoverReport({ start: stoStart, end: stoEnd });
+      setStockTurnover(data);
+    } catch (err) {
+      setStoError(err.message || "Failed to load stock turnover report.");
+    } finally {
+      setStoLoading(false);
+    }
+  };
+
   return (
     <div className="placeholder-page">
-      <h2>Reporting (IPOS-SA-RPRT)</h2>
+      <h2>Reporting</h2>
 
-      {/* ── Low-Stock Report (CAT-US10) ──────────────────────────────── */}
+      {/* ── Low-Stock Report ───────────────────────────────────────────── */}
       <section style={{ marginTop: "1.5rem" }}>
         <h3 style={{ marginBottom: "0.75rem" }}>
           Low-Stock Report
@@ -227,9 +269,9 @@ function ReportingPlaceholder() {
         )}
       </section>
 
-      {/* ── Sales Turnover (RPT-US1) ─────────────────────────────────── */}
+      {/* ── Sales Turnover ─────────────────────────────────────────────── */}
       <section style={{ marginTop: "2rem" }}>
-        <h3 style={{ marginBottom: "0.75rem" }}>Sales Turnover (RPT-US1)</h3>
+        <h3 style={{ marginBottom: "0.75rem" }}>Sales Turnover</h3>
         <div
           className="no-print"
           style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end", marginBottom: "0.75rem" }}
@@ -274,9 +316,9 @@ function ReportingPlaceholder() {
         )}
       </section>
 
-      {/* ── Merchant order history (RPT-US2) ──────────────────────────── */}
+      {/* ── Merchant order history ─────────────────────────────────────── */}
       <section style={{ marginTop: "2rem" }}>
-        <h3 style={{ marginBottom: "0.75rem" }}>Merchant Order History (RPT-US2)</h3>
+        <h3 style={{ marginBottom: "0.75rem" }}>Merchant Order History</h3>
         <div
           className="no-print"
           style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end", marginBottom: "0.75rem" }}
@@ -351,9 +393,9 @@ function ReportingPlaceholder() {
         )}
       </section>
 
-      {/* ── Merchant activity detail (RPT-US3) ───────────────────────── */}
+      {/* ── Merchant activity detail ───────────────────────────────────── */}
       <section style={{ marginTop: "2rem" }}>
-        <h3 style={{ marginBottom: "0.75rem" }}>Merchant Activity (RPT-US3)</h3>
+        <h3 style={{ marginBottom: "0.75rem" }}>Merchant Activity</h3>
         <div
           className="no-print"
           style={{
@@ -490,13 +532,145 @@ function ReportingPlaceholder() {
         )}
       </section>
 
-      {/* ── Planned (RPT-US4–US5) ─────────────────────────────────────── */}
-      <div style={{ marginTop: "2rem", color: "#6b7280", fontSize: "0.9rem" }} className="no-print">
-        <p>
-          <strong>Planned reports:</strong> Global Invoice Monitoring (RPT-US4), Stock Turnover
-          Analysis (RPT-US5).
-        </p>
-      </div>
+      {/* ── Global Invoice Monitoring ─────────────────────────────────── */}
+      <section style={{ marginTop: "2rem" }}>
+        <h3 style={{ marginBottom: "0.75rem" }}>Global Invoice Monitoring</h3>
+        <div
+          className="no-print"
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+            alignItems: "flex-end",
+            marginBottom: "0.75rem",
+          }}
+        >
+          <label>
+            Start date{" "}
+            <input type="date" value={giStart} onChange={(e) => setGiStart(e.target.value)} />
+          </label>
+          <label>
+            End date{" "}
+            <input type="date" value={giEnd} onChange={(e) => setGiEnd(e.target.value)} />
+          </label>
+          <button type="button" onClick={runGlobalInvoices} disabled={giLoading}>
+            {giLoading ? "Loading…" : "Run report"}
+          </button>
+          <button type="button" onClick={() => window.print()}>
+            Print
+          </button>
+        </div>
+        {giError && (
+          <p className="status-message error" style={{ color: "#dc2626" }}>
+            {giError}
+          </p>
+        )}
+        {globalInvoices && (
+          <div style={{ marginTop: "0.5rem" }}>
+            <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "0.5rem" }}>
+              All invoices issued in the selected range (issue date). Payment status matches order
+              history semantics (PENDING / PARTIAL / PAID).
+            </p>
+            <table className="product-table">
+              <thead>
+                <tr>
+                  <th>Merchant ID</th>
+                  <th>Username</th>
+                  <th>Merchant name</th>
+                  <th>Invoice #</th>
+                  <th>Invoice id</th>
+                  <th>Issued</th>
+                  <th>Amount</th>
+                  <th>Payment status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(globalInvoices.rows || []).map((row) => (
+                  <tr key={`${row.invoiceId}-${row.invoiceNumber}`}>
+                    <td>{row.merchantId}</td>
+                    <td>{row.merchantUsername ?? "—"}</td>
+                    <td>{row.merchantName ?? "—"}</td>
+                    <td>{row.invoiceNumber ?? "—"}</td>
+                    <td>{row.invoiceId}</td>
+                    <td>{formatInstant(row.issuedAt)}</td>
+                    <td>{formatMoney(row.amount)}</td>
+                    <td>{row.paymentStatus ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {(globalInvoices.rows || []).length === 0 && (
+              <p style={{ marginTop: "0.5rem", color: "#6b7280" }}>No invoices in this period.</p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ── Stock Turnover ─────────────────────────────────────────────── */}
+      <section style={{ marginTop: "2rem" }}>
+        <h3 style={{ marginBottom: "0.75rem" }}>Stock Turnover</h3>
+        <div
+          className="no-print"
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+            alignItems: "flex-end",
+            marginBottom: "0.75rem",
+          }}
+        >
+          <label>
+            Start date{" "}
+            <input type="date" value={stoStart} onChange={(e) => setStoStart(e.target.value)} />
+          </label>
+          <label>
+            End date{" "}
+            <input type="date" value={stoEnd} onChange={(e) => setStoEnd(e.target.value)} />
+          </label>
+          <button type="button" onClick={runStockTurnover} disabled={stoLoading}>
+            {stoLoading ? "Loading…" : "Run report"}
+          </button>
+          <button type="button" onClick={() => window.print()}>
+            Print
+          </button>
+        </div>
+        {stoError && (
+          <p className="status-message error" style={{ color: "#dc2626" }}>
+            {stoError}
+          </p>
+        )}
+        {stockTurnover && (
+          <div style={{ marginTop: "0.5rem" }}>
+            <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "0.5rem" }}>
+              Quantities sold from non-cancelled orders with order date in range; quantities received
+              from stock deliveries with delivery date in range (inclusive).
+            </p>
+            <table className="product-table">
+              <thead>
+                <tr>
+                  <th>Product code</th>
+                  <th>Product id</th>
+                  <th>Qty sold</th>
+                  <th>Qty received</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(stockTurnover.rows || []).map((row) => (
+                  <tr key={row.productId}>
+                    <td>{row.productCode ?? "—"}</td>
+                    <td>{row.productId}</td>
+                    <td>{row.quantitySold}</td>
+                    <td>{row.quantityReceived}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {(stockTurnover.rows || []).length === 0 && (
+              <p style={{ marginTop: "0.5rem", color: "#6b7280" }}>No sales or deliveries in this period.</p>
+            )}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

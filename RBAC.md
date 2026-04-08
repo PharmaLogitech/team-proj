@@ -212,5 +212,5 @@ High-level checklist; **detailed** status is in **`ACCprogress.txt`** (ACC) and 
 - [ ] RPT-US1: Sales Turnover Reporting
 - [ ] RPT-US2: Merchant History Tracking
 - [ ] RPT-US3: Individual Merchant Activity Report
-- [ ] RPT-US4: Global Invoice Monitoring
-- [ ] RPT-US5: Stock Turnover Analysis
+- [x] RPT-US4: Global Invoice Monitoring (`GET /api/reports/invoices`)
+- [x] RPT-US5: Stock Turnover Analysis (`GET /api/reports/stock-turnover`)
