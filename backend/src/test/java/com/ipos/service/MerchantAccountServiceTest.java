@@ -31,6 +31,7 @@
  */
 package com.ipos.service;
 
+import com.ipos.config.IntegrationCaProperties;
 import com.ipos.entity.MerchantProfile;
 import com.ipos.entity.MerchantProfile.AccountStatus;
 import com.ipos.entity.MerchantProfile.DiscountPlanType;
@@ -110,7 +111,8 @@ public class MerchantAccountServiceTest {
         orderService = new OrderService(
                 orderRepository, productRepository, userRepository, profileRepository,
                 mock(InvoiceService.class),
-                invoiceRepository);
+                invoiceRepository,
+                new IntegrationCaProperties());
         lenient().when(invoiceRepository.sumPaymentsByMerchantId(anyLong())).thenReturn(BigDecimal.ZERO);
 
         userService = new UserService(userRepository, passwordEncoder);

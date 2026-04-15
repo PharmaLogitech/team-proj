@@ -114,6 +114,7 @@ const ACCESS_MATRIX = {
 const ROUTE_PACKAGES = {
   catalogue: PACKAGE_CAT,
   order: PACKAGE_ORD,
+  trackOrders: PACKAGE_ORD,
   invoices: PACKAGE_ORD,
   reporting: PACKAGE_RPRT,
   accounts: PACKAGE_ACC,

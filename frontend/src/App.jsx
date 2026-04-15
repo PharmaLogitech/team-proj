@@ -47,6 +47,7 @@ import MerchantCreate from "./MerchantCreate.jsx";
 import MerchantManagement from "./MerchantManagement.jsx";
 import Invoices from "./Invoices.jsx";
 import CommercialApplication from "./CommercialApplication.jsx";
+import TrackMerchantOrders from "./TrackMerchantOrders.jsx";
 
 /*
  * ── NAV_LABELS ───────────────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ import CommercialApplication from "./CommercialApplication.jsx";
 const NAV_LABELS = {
   catalogue: "Catalogue",
   order: "Place Order",
+  trackOrders: "Track Merchant Orders",
   invoices: "Invoices",
   reporting: "Reporting",
   accounts: "Accounts",
@@ -79,6 +81,9 @@ const PAGE_COMPONENTS = {
       onOrderPlaced={props.onOrderPlaced}
       currentUser={props.currentUser}
     />
+  ),
+  trackOrders: (props) => (
+    <TrackMerchantOrders currentUser={props.currentUser} />
   ),
   invoices: () => <Invoices />,
   reporting: () => <ReportingPlaceholder />,

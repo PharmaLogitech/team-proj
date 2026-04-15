@@ -37,9 +37,11 @@
  * ║  ORD-US2 (order tracking / status updates):                                  ║
  * ║        findOrdersForActor() returns role-scoped order lists.               ║
  * ║        updateOrderStatus() enforces valid transitions:                     ║
- * ║          ACCEPTED → PROCESSING → DISPATCHED (forward-only),               ║
+ * ║          ACCEPTED → PROCESSING → DISPATCHED → DELIVERED (forward-only),   ║
  * ║          ACCEPTED | PROCESSING → CANCELLED.                               ║
  * ║        Only MANAGER / ADMIN may update status.                             ║
+ * ║        After each transition, SA pushes the new status to IPOS-CA's       ║
+ * ║        embedded server (fire-and-forget POST to /order-update).           ║
  * ║                                                                              ║
  * ║  HOW TO EXTEND:                                                              ║
  * ║        - Add cancellation logic that RESTORES stock.                        ║
@@ -47,6 +49,7 @@
  */
 package com.ipos.service;
 
+import com.ipos.config.IntegrationCaProperties;
 import com.ipos.entity.MerchantProfile;
 import com.ipos.entity.MerchantProfile.DiscountPlanType;
 import com.ipos.entity.MerchantProfile.MerchantStanding;
@@ -62,6 +65,7 @@ import com.ipos.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -80,28 +84,32 @@ public class OrderService {
     private final MerchantProfileRepository profileRepository;
     private final InvoiceService invoiceService;
     private final InvoiceRepository invoiceRepository;
+    private final IntegrationCaProperties caProperties;
 
     public OrderService(OrderRepository orderRepository,
                         ProductRepository productRepository,
                         UserRepository userRepository,
                         MerchantProfileRepository profileRepository,
                         InvoiceService invoiceService,
-                        InvoiceRepository invoiceRepository) {
+                        InvoiceRepository invoiceRepository,
+                        IntegrationCaProperties caProperties) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
         this.invoiceService = invoiceService;
         this.invoiceRepository = invoiceRepository;
+        this.caProperties = caProperties;
     }
 
     /**
      * Valid forward transitions for the order lifecycle.
-     * ACCEPTED → PROCESSING → DISPATCHED (linear), plus cancellation branch.
+     * ACCEPTED → PROCESSING → DISPATCHED → DELIVERED (linear), plus cancellation branch.
      */
     private static final Map<Order.OrderStatus, Set<Order.OrderStatus>> VALID_TRANSITIONS = Map.of(
             Order.OrderStatus.ACCEPTED,   Set.of(Order.OrderStatus.PROCESSING, Order.OrderStatus.CANCELLED),
-            Order.OrderStatus.PROCESSING, Set.of(Order.OrderStatus.DISPATCHED, Order.OrderStatus.CANCELLED)
+            Order.OrderStatus.PROCESSING, Set.of(Order.OrderStatus.DISPATCHED, Order.OrderStatus.CANCELLED),
+            Order.OrderStatus.DISPATCHED, Set.of(Order.OrderStatus.DELIVERED)
     );
 
     /**
@@ -123,6 +131,17 @@ public class OrderService {
      */
     @Transactional
     public Order updateOrderStatus(Long orderId, Order.OrderStatus newStatus) {
+        return updateOrderStatus(orderId, newStatus, null, null, null, null);
+    }
+
+    /**
+     * Overload that accepts optional shipping details for the DISPATCHED transition.
+     */
+    @Transactional
+    public Order updateOrderStatus(Long orderId, Order.OrderStatus newStatus,
+                                   String courierName, String courierReference,
+                                   java.time.LocalDate dispatchDate,
+                                   java.time.LocalDate expectedDeliveryDate) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Order not found with id: " + orderId));
@@ -137,10 +156,47 @@ public class OrderService {
         }
 
         order.setStatus(newStatus);
-        if (newStatus == Order.OrderStatus.DISPATCHED && order.getDispatchedAt() == null) {
-            order.setDispatchedAt(Instant.now());
+        if (newStatus == Order.OrderStatus.DISPATCHED) {
+            if (order.getDispatchedAt() == null) {
+                order.setDispatchedAt(Instant.now());
+            }
+            if (courierName != null)          order.setCourierName(courierName);
+            if (courierReference != null)     order.setCourierReference(courierReference);
+            if (dispatchDate != null)         order.setDispatchDate(dispatchDate);
+            if (expectedDeliveryDate != null) order.setExpectedDeliveryDate(expectedDeliveryDate);
         }
-        return orderRepository.save(order);
+        if (newStatus == Order.OrderStatus.DELIVERED && order.getDeliveredAt() == null) {
+            order.setDeliveredAt(Instant.now());
+        }
+        Order saved = orderRepository.save(order);
+        notifyCaStatusChange(saved);
+        return saved;
+    }
+
+    /**
+     * Fire-and-forget POST to IPOS-CA's inbound server so CA can track order
+     * lifecycle changes in real time. Failures are logged but never block the
+     * SA transaction — CA may be offline during development/testing.
+     * Includes shipping details when status is DISPATCHED.
+     */
+    private void notifyCaStatusChange(Order order) {
+        if (!caProperties.isWebhookEnabled()) return;
+        try {
+            RestTemplate rt = new RestTemplate();
+            java.util.HashMap<String, Object> body = new java.util.HashMap<>();
+            body.put("orderId", order.getId());
+            body.put("status", order.getStatus().name());
+            if (order.getStatus() == Order.OrderStatus.DISPATCHED) {
+                if (order.getCourierName() != null)          body.put("courierName", order.getCourierName());
+                if (order.getCourierReference() != null)     body.put("courierReference", order.getCourierReference());
+                if (order.getDispatchDate() != null)         body.put("dispatchDate", order.getDispatchDate().toString());
+                if (order.getExpectedDeliveryDate() != null) body.put("expectedDeliveryDate", order.getExpectedDeliveryDate().toString());
+            }
+            rt.postForObject(caProperties.getWebhookUrl(), body, String.class);
+            System.out.println("[SA→CA] Notified CA of order " + order.getId() + " → " + order.getStatus());
+        } catch (Exception e) {
+            System.err.println("[SA→CA] CA notification failed (non-fatal): " + e.getMessage());
+        }
     }
 
     /*

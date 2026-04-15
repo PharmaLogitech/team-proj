@@ -149,7 +149,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+        config.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:8081"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -227,7 +227,10 @@ public class SecurityConfig {
             .csrf(csrf -> csrf
                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-                .ignoringRequestMatchers("/api/auth/login", "/api/integration-pu/inbound/**")
+                .ignoringRequestMatchers("/api/auth/login", "/api/integration-pu/inbound/**",
+                        "/api/orders", "/api/orders/**",
+                        "/api/invoices", "/api/invoices/**",
+                        "/api/merchant-financials", "/api/merchant-financials/**")
             );
 
         /*

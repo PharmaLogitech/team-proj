@@ -39,6 +39,7 @@ import com.ipos.repository.OrderRepository;
 import com.ipos.repository.ProductRepository;
 import com.ipos.repository.UserRepository;
 import com.ipos.security.SecurityConfig;
+import com.ipos.config.IntegrationCaProperties;
 import com.ipos.service.InvoiceService;
 import com.ipos.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
@@ -97,7 +98,8 @@ public class ORDOrderTest {
         orderService = new OrderService(
                 orderRepository, productRepository, userRepository, profileRepository,
                 invoiceService,
-                invoiceRepository);
+                invoiceRepository,
+                new IntegrationCaProperties());
     }
 
     /* ── helpers ────────────────────────────────────────────────────────────── */
@@ -354,7 +356,8 @@ class OrderControllerWebMvcTest {
         updated.setId(1L);
         updated.setStatus(OrderStatus.PROCESSING);
 
-        when(orderService.updateOrderStatus(1L, OrderStatus.PROCESSING)).thenReturn(updated);
+        when(orderService.updateOrderStatus(1L, OrderStatus.PROCESSING, null, null, null, null))
+                .thenReturn(updated);
 
         mockMvc.perform(put("/api/orders/1/status")
                         .with(user("manager").roles("MANAGER"))

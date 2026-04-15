@@ -87,6 +87,27 @@ public class InvoiceController {
     }
 
     /**
+     * GET /api/invoices/by-order/{orderId} — fetch the invoice linked to a specific order.
+     * MERCHANT can only view their own invoice; MANAGER/ADMIN can view any.
+     * Used by IPOS-CA to retrieve the invoice after placing a wholesale order.
+     */
+    @GetMapping("/by-order/{orderId}")
+    public ResponseEntity<?> getByOrder(@PathVariable Long orderId, Authentication auth) {
+        User caller = resolveUser(auth);
+        Invoice invoice = invoiceRepository.findByOrder_Id(orderId).orElse(null);
+        if (invoice == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "No invoice found for order " + orderId));
+        }
+        if (caller.getRole() == User.Role.MERCHANT
+                && !invoice.getMerchant().getId().equals(caller.getId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied."));
+        }
+        return ResponseEntity.ok(invoice);
+    }
+
+    /**
      * POST /api/invoices/{id}/payments — record payment against invoice (ORD-US6).
      * ADMIN only (SecurityConfig + @PreAuthorize defence-in-depth).
      */

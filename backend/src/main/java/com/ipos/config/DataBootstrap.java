@@ -157,6 +157,19 @@ public class DataBootstrap implements ApplicationRunner {
                 null,
                 PDF_HELLO_FLEXIBLE_TIERS);
 
+        System.out.println("[Bootstrap] Checking for IPOS-CA integration merchant...");
+
+        seedPdfMerchantIfMissing(
+                "ca_merchant",
+                "IPOS-CA Pharmacy",
+                "ca_pass",
+                "1 High Street, London EC1V 0HB",
+                "0207 040 9999",
+                new BigDecimal("50000"),
+                DiscountPlanType.FIXED,
+                new BigDecimal("0"),
+                null);
+
         System.out.println("[Bootstrap] Done.");
     }
 

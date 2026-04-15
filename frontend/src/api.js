@@ -491,14 +491,21 @@ export async function getOrders() {
 
 /**
  * Update an order's status.
- * PUT /api/orders/{id}/status with JSON body { status }.
+ * PUT /api/orders/{id}/status with JSON body { status, courierName?, courierReference?, dispatchDate?, expectedDeliveryDate? }.
+ * Shipping fields are only relevant when status is "DISPATCHED".
  *
  * ACCESS: MANAGER / ADMIN only (ORD-US2).
  */
-export async function updateOrderStatus(orderId, status) {
+export async function updateOrderStatus(orderId, status, shippingDetails = {}) {
+  const payload = { status };
+  if (shippingDetails.courierName)          payload.courierName = shippingDetails.courierName;
+  if (shippingDetails.courierReference)     payload.courierReference = shippingDetails.courierReference;
+  if (shippingDetails.dispatchDate)         payload.dispatchDate = shippingDetails.dispatchDate;
+  if (shippingDetails.expectedDeliveryDate) payload.expectedDeliveryDate = shippingDetails.expectedDeliveryDate;
+
   const response = await fetchWithAuth(`${API_BASE}/orders/${orderId}/status`, {
     method: "PUT",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(payload),
   });
 
   const data = await response.json();

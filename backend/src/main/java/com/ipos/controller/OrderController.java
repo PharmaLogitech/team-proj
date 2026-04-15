@@ -114,13 +114,16 @@ public class OrderController {
     /**
      * PUT /api/orders/{id}/status -- advance order lifecycle (ORD-US2).
      * MANAGER / ADMIN only (SecurityConfig URL rule + @PreAuthorize defence-in-depth).
+     * When transitioning to DISPATCHED, optional shipping fields are accepted.
      */
     @PutMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
     public ResponseEntity<?> updateStatus(@PathVariable Long id,
                                           @RequestBody UpdateOrderStatusRequest request) {
         try {
-            Order updated = orderService.updateOrderStatus(id, request.status());
+            Order updated = orderService.updateOrderStatus(id, request.status(),
+                    request.courierName(), request.courierReference(),
+                    request.dispatchDate(), request.expectedDeliveryDate());
             return ResponseEntity.ok(updated);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -134,5 +137,9 @@ public class OrderController {
     record OrderItemRequest(Long productId, Integer quantity) {}
 
     /** Status update payload for PUT /api/orders/{id}/status. */
-    record UpdateOrderStatusRequest(Order.OrderStatus status) {}
+    record UpdateOrderStatusRequest(Order.OrderStatus status,
+                                    String courierName,
+                                    String courierReference,
+                                    java.time.LocalDate dispatchDate,
+                                    java.time.LocalDate expectedDeliveryDate) {}
 }

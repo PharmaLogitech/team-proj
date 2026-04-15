@@ -8,7 +8,7 @@
  * ║        merchant (User) who placed it and the items inside it.               ║
  * ║                                                                              ║
  * ║  ORDER STATUS LIFECYCLE (ORD-US1/US2):                                      ║
- * ║        ACCEPTED → PROCESSING → DISPATCHED   (forward-only progression)      ║
+ * ║        ACCEPTED → PROCESSING → DISPATCHED → DELIVERED (forward-only)       ║
  * ║        Any non-DISPATCHED status → CANCELLED (cancellation branch)          ║
  * ║        New orders are created with status ACCEPTED.                         ║
  * ║                                                                              ║
@@ -34,6 +34,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -125,6 +126,26 @@ public class Order {
     @Column(name = "dispatched_at")
     private Instant dispatchedAt;
 
+    /**
+     * Set when the order reaches {@link OrderStatus#DELIVERED} (CA integration).
+     * Nullable for orders not yet delivered.
+     */
+    @Column(name = "delivered_at")
+    private Instant deliveredAt;
+
+    /** Shipping details — populated when order transitions to DISPATCHED. */
+    @Column(name = "courier_name", length = 120)
+    private String courierName;
+
+    @Column(name = "courier_reference", length = 120)
+    private String courierReference;
+
+    @Column(name = "dispatch_date")
+    private LocalDate dispatchDate;
+
+    @Column(name = "expected_delivery_date")
+    private LocalDate expectedDeliveryDate;
+
     /*
      * ── ONE-TO-MANY RELATIONSHIP ─────────────────────────────────────────────
      *
@@ -155,7 +176,7 @@ public class Order {
     /*
      * ── ORDER STATUS ENUM (ORD-US1/US2) ──────────────────────────────────────
      *
-     * Lifecycle: ACCEPTED → PROCESSING → DISPATCHED (forward-only).
+     * Lifecycle: ACCEPTED → PROCESSING → DISPATCHED → DELIVERED (forward-only).
      * Cancellation: ACCEPTED or PROCESSING → CANCELLED.
      * DISPATCHED orders cannot be cancelled.
      *
@@ -173,6 +194,7 @@ public class Order {
         ACCEPTED,
         PROCESSING,
         DISPATCHED,
+        DELIVERED,
         CANCELLED
     }
 
@@ -259,5 +281,45 @@ public class Order {
 
     public void setDispatchedAt(Instant dispatchedAt) {
         this.dispatchedAt = dispatchedAt;
+    }
+
+    public Instant getDeliveredAt() {
+        return deliveredAt;
+    }
+
+    public void setDeliveredAt(Instant deliveredAt) {
+        this.deliveredAt = deliveredAt;
+    }
+
+    public String getCourierName() {
+        return courierName;
+    }
+
+    public void setCourierName(String courierName) {
+        this.courierName = courierName;
+    }
+
+    public String getCourierReference() {
+        return courierReference;
+    }
+
+    public void setCourierReference(String courierReference) {
+        this.courierReference = courierReference;
+    }
+
+    public LocalDate getDispatchDate() {
+        return dispatchDate;
+    }
+
+    public void setDispatchDate(LocalDate dispatchDate) {
+        this.dispatchDate = dispatchDate;
+    }
+
+    public LocalDate getExpectedDeliveryDate() {
+        return expectedDeliveryDate;
+    }
+
+    public void setExpectedDeliveryDate(LocalDate expectedDeliveryDate) {
+        this.expectedDeliveryDate = expectedDeliveryDate;
     }
 }
