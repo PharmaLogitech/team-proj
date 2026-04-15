@@ -25,6 +25,30 @@ import {
   getMerchantBalance,
 } from "./api.js";
 
+/* UK standard VAT rate. Displayed values treat Total Due as VAT-inclusive:
+   net = totalDue / (1 + VAT_RATE), vat = totalDue - net. */
+const VAT_RATE = 0.20;
+
+/** Sum of all payments recorded against an invoice. */
+function sumPayments(invoice) {
+  if (!invoice?.payments) return 0;
+  return invoice.payments.reduce((acc, p) => acc + Number(p.amount || 0), 0);
+}
+
+/** Remaining balance = Total Due - sum(payments), floored at zero. */
+function remainingBalance(invoice) {
+  const remaining = Number(invoice.totalDue || 0) - sumPayments(invoice);
+  return remaining > 0 ? remaining : 0;
+}
+
+/** VAT breakdown computed from Total Due (VAT-inclusive). */
+function vatBreakdown(totalDue) {
+  const total = Number(totalDue || 0);
+  const net = total / (1 + VAT_RATE);
+  const vat = total - net;
+  return { net, vat };
+}
+
 function Invoices() {
   const { user } = useAuth();
   const isMerchant = user?.role === "MERCHANT";
@@ -153,11 +177,17 @@ function Invoices() {
               <th>Issued</th>
               <th>Due Date</th>
               <th style={{ textAlign: "right" }}>Total Due</th>
+              <th style={{ textAlign: "right" }}>Paid</th>
+              <th style={{ textAlign: "right" }}>Remaining</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {invoices.map((inv) => (
+            {invoices.map((inv) => {
+              const paid = sumPayments(inv);
+              const remaining = remainingBalance(inv);
+              const fullyPaid = remaining === 0 && paid > 0;
+              return (
               <tr key={inv.id}>
                 <td style={{ fontFamily: "monospace" }}>{inv.invoiceNumber}</td>
                 {!isMerchant && <td>{inv.merchantName}</td>}
@@ -165,6 +195,10 @@ function Invoices() {
                 <td>{inv.dueDate || "—"}</td>
                 <td style={{ textAlign: "right", fontWeight: 600 }}>
                   £{Number(inv.totalDue).toFixed(2)}
+                </td>
+                <td style={{ textAlign: "right" }}>£{paid.toFixed(2)}</td>
+                <td style={{ textAlign: "right", fontWeight: 600, color: fullyPaid ? "#16a34a" : "#dc2626" }}>
+                  {fullyPaid ? "PAID" : `£${remaining.toFixed(2)}`}
                 </td>
                 <td>
                   <button
@@ -192,7 +226,8 @@ function Invoices() {
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -217,7 +252,7 @@ function Invoices() {
             <div><strong>Address:</strong> {selectedInvoice.merchantAddress}</div>
             <div><strong>Phone:</strong> {selectedInvoice.merchantPhone}</div>
             {selectedInvoice.merchantVat && (
-              <div><strong>VAT #:</strong> {selectedInvoice.merchantVat}</div>
+              <div><strong>VAT Reg #:</strong> {selectedInvoice.merchantVat}</div>
             )}
             <div><strong>Due Date:</strong> {selectedInvoice.dueDate}</div>
           </div>
@@ -245,18 +280,36 @@ function Invoices() {
             </tbody>
           </table>
 
-          <div style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}>
-            <div><strong>Gross Total:</strong> £{Number(selectedInvoice.grossTotal).toFixed(2)}</div>
-            {Number(selectedInvoice.fixedDiscountAmount) > 0 && (
-              <div><strong>Fixed Discount:</strong> -£{Number(selectedInvoice.fixedDiscountAmount).toFixed(2)}</div>
-            )}
-            {Number(selectedInvoice.flexibleCreditApplied) > 0 && (
-              <div><strong>Flexible Credit:</strong> -£{Number(selectedInvoice.flexibleCreditApplied).toFixed(2)}</div>
-            )}
-            <div style={{ fontWeight: 700, fontSize: "1rem", marginTop: "0.25rem" }}>
-              <strong>Total Due:</strong> £{Number(selectedInvoice.totalDue).toFixed(2)}
-            </div>
-          </div>
+          {(() => {
+            const { net, vat } = vatBreakdown(selectedInvoice.totalDue);
+            const paid = sumPayments(selectedInvoice);
+            const remaining = remainingBalance(selectedInvoice);
+            const fullyPaid = remaining === 0 && paid > 0;
+            return (
+              <div style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}>
+                <div><strong>Gross Total:</strong> £{Number(selectedInvoice.grossTotal).toFixed(2)}</div>
+                {Number(selectedInvoice.fixedDiscountAmount) > 0 && (
+                  <div><strong>Fixed Discount:</strong> -£{Number(selectedInvoice.fixedDiscountAmount).toFixed(2)}</div>
+                )}
+                {Number(selectedInvoice.flexibleCreditApplied) > 0 && (
+                  <div><strong>Flexible Credit:</strong> -£{Number(selectedInvoice.flexibleCreditApplied).toFixed(2)}</div>
+                )}
+                <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px dashed #cbd5e1" }}>
+                  <div><strong>Net (excl. VAT):</strong> £{net.toFixed(2)}</div>
+                  <div><strong>VAT ({(VAT_RATE * 100).toFixed(0)}%):</strong> £{vat.toFixed(2)}</div>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: "1rem", marginTop: "0.25rem" }}>
+                  <strong>Total Due:</strong> £{Number(selectedInvoice.totalDue).toFixed(2)}
+                </div>
+                <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid #e2e8f0" }}>
+                  <div><strong>Paid to Date:</strong> £{paid.toFixed(2)}</div>
+                  <div style={{ fontWeight: 700, fontSize: "1rem", color: fullyPaid ? "#16a34a" : "#dc2626" }}>
+                    <strong>Remaining Balance:</strong> {fullyPaid ? "PAID IN FULL" : `£${remaining.toFixed(2)}`}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Show existing payments. */}
           {selectedInvoice.payments && selectedInvoice.payments.length > 0 && (
