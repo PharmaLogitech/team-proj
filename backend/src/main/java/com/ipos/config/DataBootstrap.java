@@ -1,76 +1,81 @@
 /*
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║  WHAT: Application startup runner that seeds default users and profiles.    ║
+ * ║  WHAT: Application startup runner that seeds PDF sample users (IPOS-SA4).    ║
  * ║                                                                              ║
- * ║  WHY:  When the application starts with a FRESH database, there are no      ║
- * ║        users — so nobody can log in, and the system is unusable.  This      ║
- * ║        runner creates one user per role (ADMIN, MANAGER, MERCHANT) with     ║
- * ║        known credentials so the team can start using the app immediately.   ║
+ * ║  WHY:  On a fresh database there are no users.  This seeds seven staff       ║
+ * ║        accounts and three merchant accounts from IPOS_SampleData_2026_v1.1m  ║
+ * ║        .pdf (merchants via MerchantAccountService — same rules as ACC-US1).   ║
  * ║                                                                              ║
- * ║  MERCHANT PROFILE (ACC-US1):                                                 ║
- * ║        The brief requires all merchants to have a MerchantProfile with      ║
- * ║        contact details, credit limit, and discount plan.  The bootstrap     ║
- * ║        creates a profile for the seeded "merchant" user so that login and   ║
- * ║        order placement work on a fresh database without manual setup.       ║
- * ║                                                                              ║
- * ║  WHEN DOES IT RUN?                                                           ║
- * ║        Spring calls ApplicationRunner.run() ONCE after the application      ║
- * ║        context is fully initialized.  It runs BEFORE Tomcat starts          ║
- * ║        accepting requests.                                                  ║
+ * ║  WHEN: Spring calls ApplicationRunner.run() once after context startup.       ║
  * ║                                                                              ║
  * ║  SAFETY:                                                                     ║
- * ║        - Only runs if ipos.bootstrap.enabled=true in application.properties.║
- * ║        - Only creates users/profiles that DON'T already exist.              ║
- * ║        - Passwords are BCrypt-hashed before storage — never plaintext.      ║
- * ║        - In production, set ipos.bootstrap.enabled=false.                   ║
+ * ║        - Only runs if ipos.bootstrap.enabled=true.                           ║
+ * ║        - Only creates users whose username does not already exist.           ║
+ * ║        - Staff passwords: plaintext only in the array below — BCrypt-hashed. ║
+ * ║        - Merchants: createMerchantAccount hashes passwords.                   ║
+ * ║        - No PU welcome-email relay here (relay runs from REST only).        ║
+ * ║        - Set ipos.bootstrap.enabled=false in production.                     ║
  * ║                                                                              ║
- * ║  DEFAULT CREDENTIALS (for development):                                      ║
- * ║        ┌──────────┬─────────────┬──────────┐                                ║
- * ║        │ Username │ Password    │ Role     │                                ║
- * ║        ├──────────┼─────────────┼──────────┤                                ║
- * ║        │ admin    │ admin123    │ ADMIN    │                                ║
- * ║        │ manager  │ manager123  │ MANAGER  │                                ║
- * ║        │ merchant │ merchant123 │ MERCHANT │                                ║
- * ║        └──────────┴─────────────┴──────────┘                                ║
+ * ║  PDF staff (roles map to ADMIN / MANAGER only):                              ║
+ * ║        ┌────────────┬───────────────────┬──────────┐                         ║
+ * ║        │ Username   │ Password          │ App role ║                         ║
+ * ║        ├────────────┼───────────────────┼──────────┤                         ║
+ * ║        │ Sysdba     │ London_weighting  │ ADMIN    ║                         ║
+ * ║        │ accountant │ Count_money       │ ADMIN    ║                         ║
+ * ║        │ manager    │ Get_it_done       │ MANAGER  ║                         ║
+ * ║        │ clerk      │ Paperwork         │ MANAGER  ║                         ║
+ * ║        │ warehouse1 │ Get_a_beer        │ MANAGER  ║                         ║
+ * ║        │ warehouse2 │ Lot_smell         │ MANAGER  ║                         ║
+ * ║        │ delivery   │ Too_dark          │ MANAGER  ║                         ║
+ * ║        └────────────┴───────────────────┴──────────┘                         ║
  * ║                                                                              ║
- * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add more default users by adding entries to bootstrapUsers below. ║
- * ║        - To seed default products, inject ProductRepository and add         ║
- * ║          product creation logic after the user seeding.                     ║
+ * ║  PDF merchants (ACC0001–ACC0003 — contact email omitted in PDF; synthetic): ║
+ * ║        city     / northampton  — CityPharmacy, FIXED 3%, £10,000             ║
+ * ║        cosymed  / bondstreet   — Cosymed Ltd, FLEXIBLE tiers per PDF        ║
+ * ║        hello    / there        — HelloPharmacy, FLEXIBLE (top tier 3%)      ║
+ * ║        Email pattern: {username}@merchant.sample.ipos                        ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.config;
 
-import com.ipos.entity.MerchantProfile;
 import com.ipos.entity.MerchantProfile.DiscountPlanType;
-import com.ipos.entity.MerchantProfile.MerchantStanding;
 import com.ipos.entity.User;
-import com.ipos.repository.MerchantProfileRepository;
 import com.ipos.repository.UserRepository;
+import com.ipos.service.MerchantAccountService;
+import java.math.BigDecimal;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-
 @Component
+@Order(10)
 public class DataBootstrap implements ApplicationRunner {
 
+    /** IPOS_SampleData Cosymed — &lt;£1000: 0%; £1000–£2000: 1%; £2000+: 2% */
+    private static final String PDF_COSYMED_FLEXIBLE_TIERS =
+            "[{\"maxExclusive\":1000,\"percent\":0},{\"maxExclusive\":2000,\"percent\":1},{\"percent\":2}]";
+
+    /** IPOS_SampleData HelloPharmacy — same bands; £2000+: 3% */
+    private static final String PDF_HELLO_FLEXIBLE_TIERS =
+            "[{\"maxExclusive\":1000,\"percent\":0},{\"maxExclusive\":2000,\"percent\":1},{\"percent\":3}]";
+
     private final UserRepository userRepository;
-    private final MerchantProfileRepository profileRepository;
     private final PasswordEncoder passwordEncoder;
+    private final MerchantAccountService merchantAccountService;
 
     @Value("${ipos.bootstrap.enabled:false}")
     private boolean bootstrapEnabled;
 
-    public DataBootstrap(UserRepository userRepository,
-                         MerchantProfileRepository profileRepository,
-                         PasswordEncoder passwordEncoder) {
+    public DataBootstrap(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            MerchantAccountService merchantAccountService) {
         this.userRepository = userRepository;
-        this.profileRepository = profileRepository;
         this.passwordEncoder = passwordEncoder;
+        this.merchantAccountService = merchantAccountService;
     }
 
     @Override
@@ -80,19 +85,20 @@ public class DataBootstrap implements ApplicationRunner {
             return;
         }
 
-        System.out.println("[Bootstrap] Checking for default users...");
+        System.out.println("[Bootstrap] Checking for default staff users (PDF sample data)...");
 
         /*
          * Each entry: { displayName, username, rawPassword, role }
-         *
-         * Passwords here are in PLAINTEXT only for this array — they are
-         * BCrypt-hashed before being stored in the database.
-         * These defaults are for DEVELOPMENT ONLY.
+         * Passwords: plaintext here only — hashed before persistence.
          */
         Object[][] bootstrapUsers = {
-                {"Admin User",    "admin",    "admin123",    User.Role.ADMIN},
-                {"Manager User",  "manager",  "manager123",  User.Role.MANAGER},
-                {"Merchant User", "merchant", "merchant123", User.Role.MERCHANT},
+                {"Administrator",           "Sysdba",     "London_weighting", User.Role.ADMIN},
+                {"Senior accountant",       "accountant", "Count_money",      User.Role.ADMIN},
+                {"Director of Operations",  "manager",    "Get_it_done",      User.Role.MANAGER},
+                {"Accountant",              "clerk",      "Paperwork",        User.Role.MANAGER},
+                {"Warehouse employee",      "warehouse1", "Get_a_beer",       User.Role.MANAGER},
+                {"Warehouse employee",      "warehouse2", "Lot_smell",        User.Role.MANAGER},
+                {"Delivery department",   "delivery",   "Too_dark",         User.Role.MANAGER},
         };
 
         for (Object[] userData : bootstrapUsers) {
@@ -111,44 +117,81 @@ public class DataBootstrap implements ApplicationRunner {
                 userRepository.save(user);
                 System.out.println("[Bootstrap] Created user: " + username
                         + " (role: " + role + ", password: " + rawPassword + ")");
-
-                /*
-                 * ── MERCHANT PROFILE SEED (ACC-US1) ──────────────────────
-                 *
-                 * The brief requires every merchant to have a profile with
-                 * contact details, credit limit, and discount plan.  Without
-                 * this, the seeded merchant user couldn't place orders (the
-                 * OrderService would reject them for having no profile).
-                 *
-                 * Demo values:
-                 *   - Credit limit: £10,000
-                 *   - Fixed discount: 5%
-                 *   - Standing: NORMAL (can trade immediately)
-                 */
-                if (role == User.Role.MERCHANT) {
-                    MerchantProfile profile = new MerchantProfile();
-                    profile.setUser(user);
-                    profile.setContactEmail("merchant@example.com");
-                    profile.setContactPhone("07700 900000");
-                    profile.setAddressLine("1 Demo Street, London, EC1A 1BB");
-                    profile.setCreditLimit(new BigDecimal("10000.00"));
-                    profile.setDiscountPlanType(DiscountPlanType.FIXED);
-                    profile.setFixedDiscountPercent(new BigDecimal("5.00"));
-                    profile.setAccountStatus(MerchantProfile.AccountStatus.ACTIVE);
-                    profile.setStanding(MerchantStanding.NORMAL);
-                    profile.setFlexibleDiscountCredit(BigDecimal.ZERO);
-                    profile.setChequeRebatePending(BigDecimal.ZERO);
-                    profile.setVatRegistrationNumber("GB123456789");
-                    profile.setPaymentTermsDays(30);
-                    profileRepository.save(profile);
-                    System.out.println("[Bootstrap] Created merchant profile for: " + username
-                            + " (credit: £10,000, plan: FIXED 5%)");
-                }
             } else {
                 System.out.println("[Bootstrap] User already exists: " + username + " — skipping.");
             }
         }
 
+        System.out.println("[Bootstrap] Checking for PDF merchant accounts...");
+
+        seedPdfMerchantIfMissing(
+                "city",
+                "CityPharmacy",
+                "northampton",
+                "Northampton Square, London EC1V 0HB",
+                "0207 040 8000",
+                new BigDecimal("10000"),
+                DiscountPlanType.FIXED,
+                new BigDecimal("3"),
+                null);
+
+        seedPdfMerchantIfMissing(
+                "cosymed",
+                "Cosymed Ltd",
+                "bondstreet",
+                "25, Bond Street, London WC1V 8LS",
+                "0207 321 8001",
+                new BigDecimal("5000"),
+                DiscountPlanType.FLEXIBLE,
+                null,
+                PDF_COSYMED_FLEXIBLE_TIERS);
+
+        seedPdfMerchantIfMissing(
+                "hello",
+                "HelloPharmacy",
+                "there",
+                "12, Bond Street, London WC1V 9NS",
+                "0207 321 8002",
+                new BigDecimal("5000"),
+                DiscountPlanType.FLEXIBLE,
+                null,
+                PDF_HELLO_FLEXIBLE_TIERS);
+
         System.out.println("[Bootstrap] Done.");
+    }
+
+    private void seedPdfMerchantIfMissing(
+            String username,
+            String tradingName,
+            String rawPassword,
+            String addressLine,
+            String phone,
+            BigDecimal creditLimit,
+            DiscountPlanType planType,
+            BigDecimal fixedDiscountPercent,
+            String flexibleTiersJson) {
+
+        if (userRepository.findByUsername(username).isPresent()) {
+            System.out.println("[Bootstrap] Merchant user already exists: " + username + " — skipping.");
+            return;
+        }
+
+        String email = username + "@merchant.sample.ipos";
+        merchantAccountService.createMerchantAccount(
+                tradingName,
+                username,
+                rawPassword,
+                email,
+                phone,
+                addressLine,
+                creditLimit,
+                planType,
+                fixedDiscountPercent,
+                flexibleTiersJson,
+                null,
+                null);
+
+        System.out.println("[Bootstrap] Created merchant: " + username
+                + " (" + tradingName + ", password: " + rawPassword + ")");
     }
 }

@@ -35,12 +35,36 @@ public class CatalogueLifecycleRunner implements ApplicationRunner {
         for (Product p : productRepository.findAll()) {
             if (p.getProductCode() == null || p.getProductCode().isBlank()) {
                 p.setProductCode("LEGACY-" + p.getId());
-                productRepository.save(p);
             }
+            backfillPdfColumns(p);
+            productRepository.save(p);
         }
         if (productRepository.count() > 0
                 && !catalogueMetadataRepository.existsById(CatalogueMetadata.SINGLETON_ID)) {
             catalogueMetadataRepository.save(new CatalogueMetadata(Instant.now()));
+        }
+    }
+
+    /**
+     * Split legacy {@code productCode} into Item ID parts; default package/units for pre-PDF rows.
+     */
+    private static void backfillPdfColumns(Product p) {
+        if (p.getItemIdRange() == null && p.getItemIdSuffix() == null && p.getProductCode() != null) {
+            String pc = p.getProductCode().trim();
+            int dash = pc.indexOf('-');
+            if (dash > 0 && dash < pc.length() - 1) {
+                p.setItemIdRange(pc.substring(0, dash).trim());
+                p.setItemIdSuffix(pc.substring(dash + 1).trim());
+            } else if (!pc.isEmpty()) {
+                p.setItemIdRange("");
+                p.setItemIdSuffix(pc);
+            }
+        }
+        if (p.getPackageType() == null || p.getPackageType().isBlank()) {
+            p.setPackageType("\u2014");
+        }
+        if (p.getUnitsPerPack() == null) {
+            p.setUnitsPerPack(1);
         }
     }
 }

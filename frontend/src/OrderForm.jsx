@@ -233,9 +233,11 @@ function OrderForm({ onOrderPlaced, currentUser }) {
                       : `${product.availabilityCount} in stock`;
                   return (
                     <option key={product.id} value={product.id}>
-                      {product.productCode
-                        ? `[${product.productCode}] `
-                        : ""}
+                      {product.itemIdRange != null && product.itemIdSuffix != null
+                        ? `${product.itemIdRange} ${product.itemIdSuffix} `
+                        : product.productCode
+                          ? `[${product.productCode}] `
+                          : ""}
                       {product.description} — £
                       {Number(product.price).toFixed(2)} ({stockLabel})
                     </option>

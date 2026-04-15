@@ -68,6 +68,9 @@ export const PACKAGE_RPRT = "IPOS-SA-RPRT"; // Reporting
  */
 export const PACKAGE_MER = "IPOS-SA-MER";   // Merchant Profiles (manager + admin)
 
+/** IPOS-PU commercial applications integration (admin review / approve / reject). */
+export const PACKAGE_PU = "IPOS-SA-PU";
+
 /* ── Access Matrix ────────────────────────────────────────────────────────────
  *
  * Maps each role to the set of packages they can access.
@@ -99,7 +102,7 @@ const ACCESS_MATRIX = {
    * Full access to all packages, including account management and
    * merchant profile management.
    */
-  ADMIN: new Set([PACKAGE_ACC, PACKAGE_CAT, PACKAGE_ORD, PACKAGE_RPRT, PACKAGE_MER]),
+  ADMIN: new Set([PACKAGE_ACC, PACKAGE_CAT, PACKAGE_ORD, PACKAGE_RPRT, PACKAGE_MER, PACKAGE_PU]),
 };
 
 /* ── Route → Package Mapping ──────────────────────────────────────────────────
@@ -115,6 +118,7 @@ const ROUTE_PACKAGES = {
   reporting: PACKAGE_RPRT,
   accounts: PACKAGE_ACC,
   merchants: PACKAGE_MER,
+  commercialApplication: PACKAGE_PU,
 };
 
 /*

@@ -118,24 +118,44 @@ public class ProductService {
 
     /**
      * Creates a product with validated, unique business Product ID (CAT-US2).
+     * Item ID is RANGE-SUFFIX (InfoPharma PDF); stored as uppercase {@code productCode}.
      */
     @Transactional
     public Product createProduct(CreateProductRequest request) {
-        String code = request.getProductCode().trim().toUpperCase(Locale.ROOT);
-        if (code.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Product ID cannot be blank");
+        String range = request.getItemIdRange().trim();
+        String suffix = request.getItemIdSuffix().trim();
+        if (range.isEmpty() || suffix.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Item ID range and number cannot be blank");
         }
+        String code = composeProductCode(range, suffix);
         if (productRepository.existsByProductCode(code)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Product ID already exists: " + code);
         }
         catalogueService.ensureCatalogueMetadataExists();
         Product product = new Product();
         product.setProductCode(code);
+        product.setItemIdRange(range.toUpperCase(Locale.ROOT));
+        product.setItemIdSuffix(suffix.toUpperCase(Locale.ROOT));
         product.setDescription(request.getDescription().trim());
+        product.setPackageType(request.getPackageType().trim());
+        product.setUnit(normalizeOptionalUnit(request.getUnit()));
+        product.setUnitsPerPack(request.getUnitsPerPack());
         product.setPrice(request.getPrice());
         product.setAvailabilityCount(request.getAvailabilityCount());
-        product.setMinStockThreshold(request.getMinStockThreshold()); // CAT-US8: optional
+        product.setMinStockThreshold(request.getMinStockThreshold());
         return productRepository.save(product);
+    }
+
+    private static String composeProductCode(String range, String suffix) {
+        return (range.trim() + "-" + suffix.trim()).toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeOptionalUnit(String unit) {
+        if (unit == null) {
+            return null;
+        }
+        String t = unit.trim();
+        return t.isEmpty() ? null : t;
     }
 
     /**
@@ -148,9 +168,12 @@ public class ProductService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Product not found with id: " + id));
         product.setDescription(request.getDescription().trim());
+        product.setPackageType(request.getPackageType().trim());
+        product.setUnit(normalizeOptionalUnit(request.getUnit()));
+        product.setUnitsPerPack(request.getUnitsPerPack());
         product.setPrice(request.getPrice());
         product.setAvailabilityCount(request.getAvailabilityCount());
-        product.setMinStockThreshold(request.getMinStockThreshold()); // CAT-US8: null clears threshold
+        product.setMinStockThreshold(request.getMinStockThreshold());
         return productRepository.save(product);
     }
 

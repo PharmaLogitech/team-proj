@@ -8,10 +8,6 @@
  * ║        the JSON response.  This DTO conditionally includes the count for    ║
  * ║        ADMIN/MANAGER and omits it (null → absent in JSON) for MERCHANT,     ║
  * ║        replacing it with a human-readable availabilityStatus string.        ║
- * ║                                                                              ║
- * ║  HOW TO EXTEND:                                                              ║
- * ║        - Add more masked/visible fields as new stories require.             ║
- * ║        - Use fromProduct() factory for consistent mapping from entities.    ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 package com.ipos.dto;
@@ -25,7 +21,12 @@ public class CatalogueProductDto {
 
     private Long id;
     private String productCode;
+    private String itemIdRange;
+    private String itemIdSuffix;
     private String description;
+    private String packageType;
+    private String unit;
+    private Integer unitsPerPack;
     private BigDecimal price;
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -33,39 +34,31 @@ public class CatalogueProductDto {
 
     private String availabilityStatus;
 
-    /**
-     * Minimum stock threshold set by admin (CAT-US8).
-     * Omitted from JSON for MERCHANT role (operational data — administrator only).
-     * null means no threshold has been configured.
-     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer minStockThreshold;
 
     public CatalogueProductDto() {
     }
 
-    /**
-     * Maps a Product entity to the catalogue DTO.
-     *
-     * @param product   the source entity
-     * @param maskStock true for MERCHANT (hide numeric count); false for ADMIN/MANAGER
-     */
     public static CatalogueProductDto fromProduct(Product product, boolean maskStock) {
         CatalogueProductDto dto = new CatalogueProductDto();
         dto.id = product.getId();
         dto.productCode = product.getProductCode();
+        dto.itemIdRange = product.getItemIdRange();
+        dto.itemIdSuffix = product.getItemIdSuffix();
         dto.description = product.getDescription();
+        dto.packageType = product.getPackageType();
+        dto.unit = product.getUnit();
+        dto.unitsPerPack = product.getUnitsPerPack();
         dto.price = product.getPrice();
 
         if (maskStock) {
-            // MERCHANT: hide numeric stock count and min threshold (admin-only operational data)
             dto.availabilityCount = null;
             dto.availabilityStatus =
                     product.getAvailabilityCount() != null && product.getAvailabilityCount() > 0
                             ? "AVAILABLE" : "OUT_OF_STOCK";
             dto.minStockThreshold = null;
         } else {
-            // ADMIN / MANAGER: full operational view
             dto.availabilityCount = product.getAvailabilityCount();
             dto.availabilityStatus =
                     product.getAvailabilityCount() != null && product.getAvailabilityCount() > 0
@@ -76,8 +69,6 @@ public class CatalogueProductDto {
         return dto;
     }
 
-    // ── Getters ──────────────────────────────────────────────────────────────
-
     public Long getId() {
         return id;
     }
@@ -86,8 +77,28 @@ public class CatalogueProductDto {
         return productCode;
     }
 
+    public String getItemIdRange() {
+        return itemIdRange;
+    }
+
+    public String getItemIdSuffix() {
+        return itemIdSuffix;
+    }
+
     public String getDescription() {
         return description;
+    }
+
+    public String getPackageType() {
+        return packageType;
+    }
+
+    public String getUnit() {
+        return unit;
+    }
+
+    public Integer getUnitsPerPack() {
+        return unitsPerPack;
     }
 
     public BigDecimal getPrice() {

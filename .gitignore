@@ -30,3 +30,7 @@ Thumbs.db
 *.log
 *.tmp
 *.temp
+
+# Local vendor / scratch trees (not part of IPOS-SA app source)
+tempdir_ipos_ca/
+tempdir_ipos_pu/

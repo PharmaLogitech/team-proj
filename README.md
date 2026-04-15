@@ -166,17 +166,31 @@ The app uses **real username + password authentication** with BCrypt password ha
 
 ### Default Bootstrap Users
 
-When `ipos.bootstrap.enabled=true` in `application.properties` (the default), the following users are created automatically on first startup if the users table is empty:
+When `ipos.bootstrap.enabled=true` in `application.properties` (the default), **IPOS_SampleData** staff and merchant accounts are created on first startup when each username is not already present.
 
-| Username | Password | Role | Access |
-|----------|----------|------|--------|
-| `admin` | `admin123` | ADMIN | Full access to all packages |
-| `manager` | `manager123` | MANAGER | Reporting + merchant settings |
-| `merchant` | `merchant123` | MERCHANT | Catalogue browsing + orders |
+**Staff**
 
-The seeded **merchant** user also has a **MerchantProfile** (contact details, £10,000 credit limit, FIXED 5% discount, standing NORMAL, **account status ACTIVE**).
+| Username | Password | Role | Access (summary) |
+|----------|----------|------|-------------------|
+| `Sysdba` | `London_weighting` | ADMIN | Full access (ACC, CAT, ORD, RPRT) |
+| `accountant` | `Count_money` | ADMIN | Full access (maps Senior accountant to ADMIN) |
+| `manager` | `Get_it_done` | MANAGER | Reporting, merchants, orders (oversight) |
+| `clerk` | `Paperwork` | MANAGER | Same MANAGER package access |
+| `warehouse1` | `Get_a_beer` | MANAGER | Same |
+| `warehouse2` | `Lot_smell` | MANAGER | Same |
+| `delivery` | `Too_dark` | MANAGER | Same |
 
-Simply start the backend, open the frontend, and log in with one of these credentials.
+**Merchants** (PDF trading names, addresses, phones, credit limits, and discount plans; contact email is synthetic `{username}@merchant.sample.ipos` because the PDF omits email)
+
+| Username | Password | Trading name | Credit / plan |
+|----------|----------|----------------|---------------|
+| `city` | `northampton` | CityPharmacy | £10,000, FIXED 3% |
+| `cosymed` | `bondstreet` | Cosymed Ltd | £5,000, FLEXIBLE (&lt;£1000: 0%; £1000–£2000: 1%; £2000+: 2%) |
+| `hello` | `there` | HelloPharmacy | £5,000, FLEXIBLE (top tier 3%) |
+
+Additional merchants can be created via **Accounts** (or `POST /api/merchant-accounts`) per ACC-US1.
+
+Start the backend, open the frontend, and log in with any row above (usernames are case-sensitive, e.g. `Sysdba`).
 
 ### Creating Additional Users (Admin only)
 
@@ -190,7 +204,7 @@ Only **ADMIN** users can create new accounts.
 
 ```powershell
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"admin123"}' -WebSession $session
+Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"Sysdba","password":"London_weighting"}' -WebSession $session
 
 Invoke-RestMethod -Uri "http://localhost:8080/api/merchant-accounts" -Method Post -ContentType "application/json" -Body '{"name":"Alice Pharma","username":"alice","password":"pass123","contactEmail":"alice@pharma.co","contactPhone":"07700 900001","addressLine":"2 High St, London","creditLimit":5000,"planType":"FIXED","fixedDiscountPercent":3}' -WebSession $session
 ```
@@ -213,15 +227,15 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/merchant-accounts" -Method Pos
 3. **Start the frontend:**  
    `cd frontend` then `npm run dev`.
 4. Open **http://localhost:5173** in your browser.
-5. On the Login screen, enter credentials (e.g., `admin` / `admin123`) and click **Log in**.
+5. On the Login screen, enter staff credentials (e.g., `Sysdba` / `London_weighting`) and click **Log in**.
 6. Navigation items are shown based on your role. Use **Catalogue** to browse and manage products (admin: create, edit, delete, record stock deliveries, set min-stock thresholds); **Place Order** to create orders; **Reporting** (manager/admin) for the low-stock report; **Accounts** (admin) to create merchants; **Merchants** (manager/admin) to edit profiles, standing, and flexible month-close.
 
-To place orders, you need products. As **admin**, use the Catalogue UI, or create one via the API (requires `productCode`, `description`, `price`, `availabilityCount`; optional `minStockThreshold`):
+To place orders, you need products. As **ADMIN**, use the Catalogue UI, or create one via the API (`POST /api/products` with `Item ID` parts `itemIdRange` + `itemIdSuffix`, plus `description`, `packageType`, `unitsPerPack`, `price`, `availabilityCount`; optional `unit`, `minStockThreshold` — `productCode` is derived as `RANGE-SUFFIX`):
 
 ```powershell
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"admin","password":"admin123"}' -WebSession $session
-Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -ContentType "application/json" -Body '{"productCode":"PARA500","description":"Paracetamol 500mg","price":4.99,"availabilityCount":100}' -WebSession $session
+Invoke-RestMethod -Uri "http://localhost:8080/api/auth/login" -Method Post -ContentType "application/json" -Body '{"username":"Sysdba","password":"London_weighting"}' -WebSession $session
+Invoke-RestMethod -Uri "http://localhost:8080/api/products" -Method Post -ContentType "application/json" -Body '{"itemIdRange":"100","itemIdSuffix":"09999","description":"Paracetamol 500mg","packageType":"caps","unitsPerPack":20,"price":4.99,"availabilityCount":100}' -WebSession $session
 ```
 
 ---

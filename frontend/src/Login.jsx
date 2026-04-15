@@ -81,9 +81,8 @@ function Login() {
         Enter your credentials to access the system.
       </p>
 
-      {/* Dev-mode help text pointing to default bootstrap credentials. */}
       <p className="login-hint" style={{ fontSize: "0.8rem", marginTop: "0.5rem" }}>
-        Default accounts: admin/admin123, manager/manager123, merchant/merchant123
+        Sample staff and merchant logins: see README.md (IPOS_SampleData bootstrap). Additional merchants: Accounts.
       </p>
 
       <form onSubmit={handleSubmit}>

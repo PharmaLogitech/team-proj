@@ -12,7 +12,7 @@
  * ║        AuthController.login(@RequestBody LoginRequest request)              ║
  * ║                                                                              ║
  * ║  EXPECTED JSON:                                                              ║
- * ║        { "username": "admin", "password": "admin123" }                      ║
+ * ║        { "username": "Sysdba", "password": "London_weighting" }            ║
  * ║                                                                              ║
  * ║  SECURITY NOTE:                                                              ║
  * ║        The password field contains the RAW (plaintext) password submitted   ║

@@ -4,20 +4,38 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
 /**
  * Request body for creating a catalogue product (CAT-US2, CAT-US8).
- * Product codes are normalized to uppercase in the service layer for case-insensitive uniqueness.
+ * Item ID is two parts (InfoPharma PDF); {@code productCode} is derived as RANGE-SUFFIX in the service.
  * minStockThreshold is optional (null = no threshold configured for this product).
  */
 public class CreateProductRequest {
 
-    @NotBlank(message = "Product ID is required")
-    private String productCode;
+    @NotBlank(message = "Item ID range is required")
+    @Size(max = 32)
+    private String itemIdRange;
+
+    @NotBlank(message = "Item ID number is required")
+    @Size(max = 32)
+    private String itemIdSuffix;
 
     @NotBlank(message = "Description is required")
     private String description;
+
+    @NotBlank(message = "Package type is required")
+    @Size(max = 64)
+    private String packageType;
+
+    /** PDF Unit column; omit or blank when not used (e.g. solid oral lines). */
+    @Size(max = 32)
+    private String unit;
+
+    @NotNull(message = "Units in a pack is required")
+    @Min(value = 1, message = "Units in a pack must be at least 1")
+    private Integer unitsPerPack;
 
     @NotNull(message = "Unit price is required")
     @DecimalMin(value = "0.01", inclusive = true, message = "Unit price must be greater than zero")
@@ -27,16 +45,23 @@ public class CreateProductRequest {
     @Min(value = 0, message = "Availability must not be negative")
     private Integer availabilityCount;
 
-    /** Optional minimum stock threshold (CAT-US8). null = no threshold. Must be ≥ 0 when provided. */
     @Min(value = 0, message = "Minimum stock threshold must not be negative")
     private Integer minStockThreshold;
 
-    public String getProductCode() {
-        return productCode;
+    public String getItemIdRange() {
+        return itemIdRange;
     }
 
-    public void setProductCode(String productCode) {
-        this.productCode = productCode;
+    public void setItemIdRange(String itemIdRange) {
+        this.itemIdRange = itemIdRange;
+    }
+
+    public String getItemIdSuffix() {
+        return itemIdSuffix;
+    }
+
+    public void setItemIdSuffix(String itemIdSuffix) {
+        this.itemIdSuffix = itemIdSuffix;
     }
 
     public String getDescription() {
@@ -45,6 +70,30 @@ public class CreateProductRequest {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getPackageType() {
+        return packageType;
+    }
+
+    public void setPackageType(String packageType) {
+        this.packageType = packageType;
+    }
+
+    public String getUnit() {
+        return unit;
+    }
+
+    public void setUnit(String unit) {
+        this.unit = unit;
+    }
+
+    public Integer getUnitsPerPack() {
+        return unitsPerPack;
+    }
+
+    public void setUnitsPerPack(Integer unitsPerPack) {
+        this.unitsPerPack = unitsPerPack;
     }
 
     public BigDecimal getPrice() {

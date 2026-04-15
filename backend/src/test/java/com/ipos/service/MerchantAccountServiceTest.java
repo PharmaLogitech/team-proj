@@ -362,6 +362,20 @@ public class MerchantAccountServiceTest {
         assertTrue(ex.getMessage().contains("last tier must NOT have 'maxExclusive'"));
     }
 
+    @Test
+    @DisplayName("IPOS_SampleData: Cosymed Ltd FLEXIBLE tiers (DataBootstrap) validate")
+    void validateFlexibleTiers_pdfCosymedSampleData() {
+        String json = "[{\"maxExclusive\":1000,\"percent\":0},{\"maxExclusive\":2000,\"percent\":1},{\"percent\":2}]";
+        assertDoesNotThrow(() -> merchantAccountService.validateFlexibleTiers(json));
+    }
+
+    @Test
+    @DisplayName("IPOS_SampleData: HelloPharmacy FLEXIBLE tiers (DataBootstrap) validate")
+    void validateFlexibleTiers_pdfHelloPharmacySampleData() {
+        String json = "[{\"maxExclusive\":1000,\"percent\":0},{\"maxExclusive\":2000,\"percent\":1},{\"percent\":3}]";
+        assertDoesNotThrow(() -> merchantAccountService.validateFlexibleTiers(json));
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     //  TEST 11: Flexible tier resolution (brief §i)
     // ═════════════════════════════════════════════════════════════════════════

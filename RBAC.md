@@ -166,13 +166,27 @@ Orders are blocked for merchants not in `NORMAL` standing (`IN_DEFAULT`, `SUSPEN
 
 ## Default Bootstrap Users
 
-When `ipos.bootstrap.enabled=true` in `application.properties`, the following users are created on first startup if the users table is empty:
+When `ipos.bootstrap.enabled=true` in `application.properties`, **staff** and **sample merchant** users from IPOS_SampleData are created on first startup if each username is missing.
 
-| Username | Password | Role | Purpose |
-|----------|----------|------|---------|
-| `admin` | `admin123` | ADMIN | Full system access |
-| `manager` | `manager123` | MANAGER | Reporting + merchant management |
-| `merchant` | `merchant123` | MERCHANT | Catalogue browsing + orders (FIXED 5%, £10k credit) |
+**Staff**
+
+| Username | Password | Role | Notes |
+|----------|----------|------|--------|
+| `Sysdba` | `London_weighting` | ADMIN | Administrator |
+| `accountant` | `Count_money` | ADMIN | Senior accountant (maps to ADMIN for app permissions) |
+| `manager` | `Get_it_done` | MANAGER | Director of Operations |
+| `clerk` | `Paperwork` | MANAGER | Accountant |
+| `warehouse1` | `Get_a_beer` | MANAGER | Warehouse |
+| `warehouse2` | `Lot_smell` | MANAGER | Warehouse |
+| `delivery` | `Too_dark` | MANAGER | Delivery |
+
+**Merchants** (contact email `{username}@merchant.sample.ipos`)
+
+| Username | Password | Role | Notes |
+|----------|----------|------|--------|
+| `city` | `northampton` | MERCHANT | CityPharmacy (PDF sample) |
+| `cosymed` | `bondstreet` | MERCHANT | Cosymed Ltd (PDF sample) |
+| `hello` | `there` | MERCHANT | HelloPharmacy (PDF sample) |
 
 Set `ipos.bootstrap.enabled=false` in production.
 

@@ -36,7 +36,25 @@ public class Product {
     @Column(name = "product_code", length = 64, unique = true)
     private String productCode;
 
+    /** First part of PDF Item ID (e.g. 100). Nullable only on legacy rows until backfilled. */
+    @Column(name = "item_id_range", length = 32)
+    private String itemIdRange;
+
+    /** Second part of PDF Item ID (e.g. 00001). Nullable only on legacy rows until backfilled. */
+    @Column(name = "item_id_suffix", length = 32)
+    private String itemIdSuffix;
+
     private String description;
+
+    @Column(name = "package_type", length = 64)
+    private String packageType;
+
+    /** PDF Unit column (e.g. ml); null when not applicable. */
+    @Column(name = "unit", length = 32)
+    private String unit;
+
+    @Column(name = "units_per_pack")
+    private Integer unitsPerPack;
 
     /*
      * We use BigDecimal for monetary values instead of double.
@@ -136,5 +154,45 @@ public class Product {
 
     public void setMinStockThreshold(Integer minStockThreshold) {
         this.minStockThreshold = minStockThreshold;
+    }
+
+    public String getItemIdRange() {
+        return itemIdRange;
+    }
+
+    public void setItemIdRange(String itemIdRange) {
+        this.itemIdRange = itemIdRange;
+    }
+
+    public String getItemIdSuffix() {
+        return itemIdSuffix;
+    }
+
+    public void setItemIdSuffix(String itemIdSuffix) {
+        this.itemIdSuffix = itemIdSuffix;
+    }
+
+    public String getPackageType() {
+        return packageType;
+    }
+
+    public void setPackageType(String packageType) {
+        this.packageType = packageType;
+    }
+
+    public String getUnit() {
+        return unit;
+    }
+
+    public void setUnit(String unit) {
+        this.unit = unit;
+    }
+
+    public Integer getUnitsPerPack() {
+        return unitsPerPack;
+    }
+
+    public void setUnitsPerPack(Integer unitsPerPack) {
+        this.unitsPerPack = unitsPerPack;
     }
 }

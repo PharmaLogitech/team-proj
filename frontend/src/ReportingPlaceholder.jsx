@@ -243,7 +243,8 @@ function ReportingPlaceholder() {
           <table className="product-table" style={{ marginTop: "0.5rem" }}>
             <thead>
               <tr>
-                <th>Product ID</th>
+                <th>Item ID (range)</th>
+                <th>Item ID (no.)</th>
                 <th>Description</th>
                 <th>Current Stock</th>
                 <th>Min Threshold</th>
@@ -253,7 +254,8 @@ function ReportingPlaceholder() {
             <tbody>
               {lowStockProducts.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.productCode ?? "—"}</td>
+                  <td>{p.itemIdRange ?? "—"}</td>
+                  <td>{p.itemIdSuffix ?? "—"}</td>
                   <td>{p.description}</td>
                   <td style={{ color: "#dc2626", fontWeight: 600 }}>
                     {p.availabilityCount}

@@ -36,6 +36,11 @@ function formatAvailability(product, role) {
   return product.availabilityCount ?? "\u2014";
 }
 
+function formatPdfCell(v) {
+  if (v == null || v === "") return "\u2014";
+  return v;
+}
+
 function Catalogue() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
@@ -50,11 +55,15 @@ function Catalogue() {
   const [initMessage, setInitMessage] = useState(null);
 
   const [form, setForm] = useState({
-    productCode: "",
+    itemIdRange: "",
+    itemIdSuffix: "",
     description: "",
+    packageType: "",
+    unit: "",
+    unitsPerPack: "",
     price: "",
     availabilityCount: "0",
-    minStockThreshold: "",   // CAT-US8: optional, blank = no threshold
+    minStockThreshold: "",
   });
   const [createBusy, setCreateBusy] = useState(false);
   const [createMessage, setCreateMessage] = useState(null);
@@ -63,9 +72,12 @@ function Catalogue() {
   const [editingProduct, setEditingProduct] = useState(null);
   const [editForm, setEditForm] = useState({
     description: "",
+    packageType: "",
+    unit: "",
+    unitsPerPack: "",
     price: "",
     availabilityCount: "",
-    minStockThreshold: "",   // CAT-US8: blank = clear threshold
+    minStockThreshold: "",
   });
   const [editBusy, setEditBusy] = useState(false);
   const [editMessage, setEditMessage] = useState(null);
@@ -141,16 +153,28 @@ function Catalogue() {
     try {
       const priceNum = Number(form.price);
       const availNum = parseInt(form.availabilityCount, 10);
+      const upp = parseInt(form.unitsPerPack, 10);
+      if (Number.isNaN(upp) || upp < 1) {
+        throw new Error("Units in a pack must be at least 1.");
+      }
       await createProduct({
-        productCode: form.productCode.trim(),
+        itemIdRange: form.itemIdRange.trim(),
+        itemIdSuffix: form.itemIdSuffix.trim(),
         description: form.description.trim(),
+        packageType: form.packageType.trim(),
+        unit: form.unit.trim(),
+        unitsPerPack: upp,
         price: priceNum,
         availabilityCount: availNum,
         minStockThreshold: form.minStockThreshold !== "" ? form.minStockThreshold : null,
       });
       setForm({
-        productCode: "",
+        itemIdRange: "",
+        itemIdSuffix: "",
         description: "",
+        packageType: "",
+        unit: "",
+        unitsPerPack: "",
         price: "",
         availabilityCount: "0",
         minStockThreshold: "",
@@ -173,6 +197,9 @@ function Catalogue() {
     setEditingProduct(product);
     setEditForm({
       description: product.description || "",
+      packageType: product.packageType || "",
+      unit: product.unit != null ? String(product.unit) : "",
+      unitsPerPack: product.unitsPerPack != null ? String(product.unitsPerPack) : "1",
       price: product.price != null ? String(product.price) : "",
       availabilityCount: product.availabilityCount != null ? String(product.availabilityCount) : "0",
       minStockThreshold: product.minStockThreshold != null ? String(product.minStockThreshold) : "",
@@ -190,8 +217,15 @@ function Catalogue() {
     setEditBusy(true);
     setEditMessage(null);
     try {
+      const upp = parseInt(editForm.unitsPerPack, 10);
+      if (Number.isNaN(upp) || upp < 1) {
+        throw new Error("Units in a pack must be at least 1.");
+      }
       await updateProduct(editingProduct.id, {
         description: editForm.description.trim(),
+        packageType: editForm.packageType.trim(),
+        unit: editForm.unit.trim(),
+        unitsPerPack: upp,
         price: Number(editForm.price),
         availabilityCount: parseInt(editForm.availabilityCount, 10),
         minStockThreshold: editForm.minStockThreshold !== "" ? editForm.minStockThreshold : null,
@@ -316,8 +350,8 @@ function Catalogue() {
         >
           <h3 style={{ marginTop: 0, fontSize: "1.1rem" }}>Catalogue administration</h3>
           <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: "0.75rem" }}>
-            Initialize the catalogue once per system, then add products (unique Product ID, price
-            &gt; 0, availability ≥ 0).
+            Initialize the catalogue once per system, then add products (InfoPharma fields: Item ID in
+            two parts, description, package type, units per pack, package cost, availability in packs).
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
             <button
@@ -353,18 +387,30 @@ function Catalogue() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
                 gap: "0.75rem",
                 alignItems: "end",
               }}
             >
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label htmlFor="productCode">Product ID</label>
+                <label htmlFor="itemIdRange">Item ID — range</label>
                 <input
-                  id="productCode"
-                  value={form.productCode}
-                  onChange={(e) => setForm((f) => ({ ...f, productCode: e.target.value }))}
+                  id="itemIdRange"
+                  value={form.itemIdRange}
+                  onChange={(e) => setForm((f) => ({ ...f, itemIdRange: e.target.value }))}
                   required
+                  placeholder="e.g. 100"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="itemIdSuffix">Item ID — no.</label>
+                <input
+                  id="itemIdSuffix"
+                  value={form.itemIdSuffix}
+                  onChange={(e) => setForm((f) => ({ ...f, itemIdSuffix: e.target.value }))}
+                  required
+                  placeholder="e.g. 00001"
                   autoComplete="off"
                 />
               </div>
@@ -378,7 +424,37 @@ function Catalogue() {
                 />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label htmlFor="price">Unit price</label>
+                <label htmlFor="packageType">Package type</label>
+                <input
+                  id="packageType"
+                  value={form.packageType}
+                  onChange={(e) => setForm((f) => ({ ...f, packageType: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="unit">Unit (opt.)</label>
+                <input
+                  id="unit"
+                  value={form.unit}
+                  onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+                  placeholder="e.g. ml"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="unitsPerPack">Units in a pack</label>
+                <input
+                  id="unitsPerPack"
+                  type="number"
+                  min="1"
+                  value={form.unitsPerPack}
+                  onChange={(e) => setForm((f) => ({ ...f, unitsPerPack: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="price">Package cost (£)</label>
                 <input
                   id="price"
                   type="number"
@@ -390,7 +466,7 @@ function Catalogue() {
                 />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label htmlFor="availabilityCount">Availability</label>
+                <label htmlFor="availabilityCount">Availability (packs)</label>
                 <input
                   id="availabilityCount"
                   type="number"
@@ -401,7 +477,7 @@ function Catalogue() {
                 />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label htmlFor="minStockThreshold">Min stock (opt.)</label>
+                <label htmlFor="minStockThreshold">Stock limit (packs, opt.)</label>
                 <input
                   id="minStockThreshold"
                   type="number"
@@ -528,71 +604,87 @@ function Catalogue() {
             : `No products yet.${isAdmin ? " Use the form above to add products." : " An administrator must add products first."}`}
         </p>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              {!isMerchant && <th>Product ID</th>}
-              <th>Description</th>
-              <th>Price</th>
-              <th>{isMerchant ? "Availability" : "In Stock"}</th>
-              {!isMerchant && <th>Min Stock</th>}
-              {isAdmin && <th>Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((product) => (
-              <tr key={product.id}>
-                {!isMerchant && <td>{product.productCode ?? "\u2014"}</td>}
-                <td>{product.description}</td>
-                <td>&pound;{Number(product.price).toFixed(2)}</td>
-                <td>{formatAvailability(product, user?.role)}</td>
-                {!isMerchant && (
-                  <td>
-                    {product.minStockThreshold != null ? (
-                      product.availabilityCount != null && product.availabilityCount < product.minStockThreshold ? (
-                        <span style={{ color: "#dc2626", fontWeight: 600 }}>
-                          {product.minStockThreshold} &#9888;
-                        </span>
-                      ) : (
-                        product.minStockThreshold
-                      )
-                    ) : (
-                      <span style={{ color: "#94a3b8" }}>&mdash;</span>
-                    )}
-                  </td>
-                )}
-                {isAdmin && (
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <button
-                      type="button"
-                      className="submit-btn"
-                      style={{ marginRight: "0.4rem", padding: "0.25rem 0.6rem", fontSize: "0.8rem" }}
-                      onClick={() => startEdit(product)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="submit-btn"
-                      style={{ marginRight: "0.4rem", padding: "0.25rem 0.6rem", fontSize: "0.8rem", background: "#0891b2" }}
-                      onClick={() => startDelivery(product)}
-                    >
-                      + Stock
-                    </button>
-                    <button
-                      type="button"
-                      className="submit-btn"
-                      style={{ padding: "0.25rem 0.6rem", fontSize: "0.8rem", background: "#dc2626" }}
-                      onClick={() => confirmDelete(product)}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                )}
+        <div style={{ overflowX: "auto" }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th title="Item ID">Range</th>
+                <th title="Item ID">No.</th>
+                <th>Description</th>
+                <th>Package type</th>
+                <th>Unit</th>
+                <th>Units / pack</th>
+                <th>Package cost (&pound;)</th>
+                <th>{isMerchant ? "Availability" : "Availability (packs)"}</th>
+                {!isMerchant && <th>Stock limit (packs)</th>}
+                {isAdmin && <th>Actions</th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {products.map((product) => (
+                <tr key={product.id}>
+                  <td>{formatPdfCell(product.itemIdRange)}</td>
+                  <td>{formatPdfCell(product.itemIdSuffix)}</td>
+                  <td>{product.description}</td>
+                  <td>{formatPdfCell(product.packageType)}</td>
+                  <td>{formatPdfCell(product.unit)}</td>
+                  <td>{product.unitsPerPack != null ? product.unitsPerPack : "\u2014"}</td>
+                  <td>&pound;{Number(product.price).toFixed(2)}</td>
+                  <td>{formatAvailability(product, user?.role)}</td>
+                  {!isMerchant && (
+                    <td>
+                      {product.minStockThreshold != null ? (
+                        product.availabilityCount != null &&
+                        product.availabilityCount < product.minStockThreshold ? (
+                          <span style={{ color: "#dc2626", fontWeight: 600 }}>
+                            {product.minStockThreshold} &#9888;
+                          </span>
+                        ) : (
+                          product.minStockThreshold
+                        )
+                      ) : (
+                        <span style={{ color: "#94a3b8" }}>&mdash;</span>
+                      )}
+                    </td>
+                  )}
+                  {isAdmin && (
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <button
+                        type="button"
+                        className="submit-btn"
+                        style={{ marginRight: "0.4rem", padding: "0.25rem 0.6rem", fontSize: "0.8rem" }}
+                        onClick={() => startEdit(product)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="submit-btn"
+                        style={{
+                          marginRight: "0.4rem",
+                          padding: "0.25rem 0.6rem",
+                          fontSize: "0.8rem",
+                          background: "#0891b2",
+                        }}
+                        onClick={() => startDelivery(product)}
+                      >
+                        + Stock
+                      </button>
+                      <button
+                        type="button"
+                        className="submit-btn"
+                        style={{ padding: "0.25rem 0.6rem", fontSize: "0.8rem", background: "#dc2626" }}
+                        onClick={() => confirmDelete(product)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* CAT-US4: Edit product modal */}
@@ -618,15 +710,22 @@ function Catalogue() {
               borderRadius: "8px",
               padding: "1.5rem",
               minWidth: "340px",
-              maxWidth: "480px",
+              maxWidth: "560px",
+              maxHeight: "90vh",
+              overflowY: "auto",
               boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ marginTop: 0 }}>
-              Edit Product: {editingProduct.productCode ?? editingProduct.id}
+              Edit: {editingProduct.itemIdRange != null && editingProduct.itemIdSuffix != null
+                ? `${editingProduct.itemIdRange}-${editingProduct.itemIdSuffix}`
+                : editingProduct.productCode ?? editingProduct.id}
             </h3>
-            <form onSubmit={handleUpdateProduct}>
+            <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: "-0.5rem" }}>
+              Item ID is fixed. Change package details, cost, and stock below.
+            </p>
+            <form onSubmit={handleUpdateProduct} style={{ marginTop: "0.5rem" }}>
               <div className="form-group">
                 <label htmlFor="edit-description">Description</label>
                 <input
@@ -637,7 +736,36 @@ function Catalogue() {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="edit-price">Unit price</label>
+                <label htmlFor="edit-packageType">Package type</label>
+                <input
+                  id="edit-packageType"
+                  value={editForm.packageType}
+                  onChange={(e) => setEditForm((f) => ({ ...f, packageType: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="edit-unit">Unit (opt.)</label>
+                <input
+                  id="edit-unit"
+                  value={editForm.unit}
+                  onChange={(e) => setEditForm((f) => ({ ...f, unit: e.target.value }))}
+                  placeholder="Leave blank if none"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="edit-unitsPerPack">Units in a pack</label>
+                <input
+                  id="edit-unitsPerPack"
+                  type="number"
+                  min="1"
+                  value={editForm.unitsPerPack}
+                  onChange={(e) => setEditForm((f) => ({ ...f, unitsPerPack: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="edit-price">Package cost (&pound;)</label>
                 <input
                   id="edit-price"
                   type="number"
@@ -649,7 +777,7 @@ function Catalogue() {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="edit-availability">Availability</label>
+                <label htmlFor="edit-availability">Availability (packs)</label>
                 <input
                   id="edit-availability"
                   type="number"
@@ -660,7 +788,7 @@ function Catalogue() {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="edit-minStockThreshold">Min stock threshold (opt.)</label>
+                <label htmlFor="edit-minStockThreshold">Stock limit (packs, opt.)</label>
                 <input
                   id="edit-minStockThreshold"
                   type="number"

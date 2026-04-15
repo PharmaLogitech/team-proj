@@ -1,0 +1,16 @@
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE payments;
+TRUNCATE TABLE invoice_lines;
+TRUNCATE TABLE invoices;
+TRUNCATE TABLE order_items;
+TRUNCATE TABLE orders;
+TRUNCATE TABLE stock_deliveries;
+TRUNCATE TABLE product_deletion_logs;
+TRUNCATE TABLE monthly_rebate_settlements;
+TRUNCATE TABLE standing_change_logs;
+TRUNCATE TABLE commercial_applications;
+TRUNCATE TABLE merchant_profiles;
+TRUNCATE TABLE products;
+TRUNCATE TABLE catalogue_metadata;
+TRUNCATE TABLE users;
+SET FOREIGN_KEY_CHECKS = 1;

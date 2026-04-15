@@ -102,12 +102,17 @@ export async function searchProducts({ productCode, q, minPrice, maxPrice } = {}
  */
 export async function createProduct(product) {
   const payload = {
-    productCode: product.productCode,
+    itemIdRange: product.itemIdRange,
+    itemIdSuffix: product.itemIdSuffix,
     description: product.description,
+    packageType: product.packageType,
+    unitsPerPack: Number(product.unitsPerPack),
     price: product.price,
     availabilityCount: product.availabilityCount,
   };
-  // CAT-US8: only send minStockThreshold when provided (null = no threshold)
+  if (product.unit != null && product.unit !== "") {
+    payload.unit = product.unit;
+  }
   if (product.minStockThreshold != null && product.minStockThreshold !== "") {
     payload.minStockThreshold = Number(product.minStockThreshold);
   }
@@ -132,14 +137,20 @@ export async function createProduct(product) {
 export async function updateProduct(id, product) {
   const payload = {
     description: product.description,
+    packageType: product.packageType,
+    unitsPerPack: Number(product.unitsPerPack),
     price: product.price,
     availabilityCount: product.availabilityCount,
-    // CAT-US8: null explicitly clears the threshold; number sets it.
     minStockThreshold:
       product.minStockThreshold != null && product.minStockThreshold !== ""
         ? Number(product.minStockThreshold)
         : null,
   };
+  if (product.unit != null && product.unit !== "") {
+    payload.unit = product.unit;
+  } else {
+    payload.unit = null;
+  }
   const response = await fetchWithAuth(`${API_BASE}/products/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload),
@@ -557,4 +568,56 @@ export async function getMerchantBalance() {
     throw new Error("Failed to fetch balance");
   }
   return response.json();
+}
+
+/* ── IPOS-PU commercial applications (ADMIN) ───────────────────────────── */
+
+/**
+ * List commercial applications from IPOS-PU. Optional status: PENDING | APPROVED | REJECTED.
+ */
+export async function getCommercialApplications({ status } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  const q = params.toString();
+  const response = await fetchWithAuth(
+    `${API_BASE}/integration-pu/applications${q ? `?${q}` : ""}`
+  );
+  const data = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(data, response));
+  }
+  return data;
+}
+
+export async function getCommercialApplication(id) {
+  const response = await fetchWithAuth(`${API_BASE}/integration-pu/applications/${id}`);
+  const data = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(data, response));
+  }
+  return data;
+}
+
+export async function approveCommercialApplication(id, { emailBody } = {}) {
+  const response = await fetchWithAuth(`${API_BASE}/integration-pu/applications/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify(emailBody != null && emailBody !== "" ? { emailBody } : {}),
+  });
+  const data = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(data, response));
+  }
+  return data;
+}
+
+export async function rejectCommercialApplication(id, reason) {
+  const response = await fetchWithAuth(`${API_BASE}/integration-pu/applications/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+  const data = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(data, response));
+  }
+  return data;
 }

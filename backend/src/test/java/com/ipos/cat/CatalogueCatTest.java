@@ -139,10 +139,13 @@ public class CatalogueCatTest {
                 stockDeliveryRepository);
     }
 
-    private static CreateProductRequest newCreateRequest(String code, String desc, String price, int avail) {
+    private static CreateProductRequest newCreateRequest(String range, String suffix, String desc, String price, int avail) {
         CreateProductRequest r = new CreateProductRequest();
-        r.setProductCode(code);
+        r.setItemIdRange(range);
+        r.setItemIdSuffix(suffix);
         r.setDescription(desc);
+        r.setPackageType("caps");
+        r.setUnitsPerPack(1);
         r.setPrice(new BigDecimal(price));
         r.setAvailabilityCount(avail);
         return r;
@@ -151,6 +154,8 @@ public class CatalogueCatTest {
     private static UpdateProductRequest newUpdateRequest(String desc, String price, int avail) {
         UpdateProductRequest r = new UpdateProductRequest();
         r.setDescription(desc);
+        r.setPackageType("caps");
+        r.setUnitsPerPack(1);
         r.setPrice(new BigDecimal(price));
         r.setAvailabilityCount(avail);
         return r;
@@ -159,6 +164,15 @@ public class CatalogueCatTest {
     private static Product sampleProduct(Long id, String code, String desc, String price, int avail) {
         Product p = new Product(code, desc, new BigDecimal(price), avail);
         p.setId(id);
+        if (code != null) {
+            int dash = code.indexOf('-');
+            if (dash > 0 && dash < code.length() - 1) {
+                p.setItemIdRange(code.substring(0, dash));
+                p.setItemIdSuffix(code.substring(dash + 1));
+            }
+        }
+        p.setPackageType("caps");
+        p.setUnitsPerPack(1);
         return p;
     }
 
@@ -220,7 +234,7 @@ public class CatalogueCatTest {
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Product out = productService.createProduct(
-                newCreateRequest("  abc-001  ", "Aspirin", "9.99", 12));
+                newCreateRequest("  abc  ", " 001 ", "Aspirin", "9.99", 12));
 
         assertEquals("ABC-001", out.getProductCode());
         assertEquals("Aspirin", out.getDescription());
@@ -231,10 +245,10 @@ public class CatalogueCatTest {
     @Test
     @DisplayName("CAT-US2: createProduct duplicate productCode returns 409")
     void createProduct_duplicateCode_conflict() {
-        when(productRepository.existsByProductCode("DUP")).thenReturn(true);
+        when(productRepository.existsByProductCode("DUP-X")).thenReturn(true);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> productService.createProduct(newCreateRequest("DUP", "X", "1.00", 1)));
+                () -> productService.createProduct(newCreateRequest("DUP", "X", "X", "1.00", 1)));
         assertEquals(409, ex.getStatusCode().value());
         verify(productRepository, never()).save(any());
     }
@@ -242,7 +256,7 @@ public class CatalogueCatTest {
     @Test
     @DisplayName("CAT-US2: createProduct blank code after trim returns 400")
     void createProduct_blankCode_badRequest() {
-        CreateProductRequest r = newCreateRequest("   ", "X", "1.00", 1);
+        CreateProductRequest r = newCreateRequest("   ", "1", "X", "1.00", 1);
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> productService.createProduct(r));
         assertEquals(400, ex.getStatusCode().value());
@@ -251,11 +265,11 @@ public class CatalogueCatTest {
     @Test
     @DisplayName("CAT-US2: createProduct trims description and allows zero stock")
     void createProduct_trimsDescription() {
-        when(productRepository.existsByProductCode("X")).thenReturn(false);
+        when(productRepository.existsByProductCode("X-1")).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Product out = productService.createProduct(
-                newCreateRequest("x", "  trimmed  ", "2.50", 0));
+                newCreateRequest("x", "1", "  trimmed  ", "2.50", 0));
 
         assertEquals("trimmed", out.getDescription());
         assertEquals(0, out.getAvailabilityCount());
@@ -264,15 +278,15 @@ public class CatalogueCatTest {
     @Test
     @DisplayName("CAT-US2: createProduct saves expected price and stock fields")
     void createProduct_savesFields() {
-        when(productRepository.existsByProductCode("P1")).thenReturn(false);
+        when(productRepository.existsByProductCode("P-1")).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        productService.createProduct(newCreateRequest("p1", "Item", "100.00", 5));
+        productService.createProduct(newCreateRequest("p", "1", "Item", "100.00", 5));
 
         ArgumentCaptor<Product> cap = ArgumentCaptor.forClass(Product.class);
         verify(productRepository).save(cap.capture());
         Product saved = cap.getValue();
-        assertEquals("P1", saved.getProductCode());
+        assertEquals("P-1", saved.getProductCode());
         assertEquals(0, new BigDecimal("100.00").compareTo(saved.getPrice()));
         assertEquals(5, saved.getAvailabilityCount());
     }
@@ -546,10 +560,10 @@ public class CatalogueCatTest {
     @Test
     @DisplayName("CAT-US8: createProduct persists minStockThreshold when provided")
     void createProduct_persistsThreshold() {
-        when(productRepository.existsByProductCode("T1")).thenReturn(false);
+        when(productRepository.existsByProductCode("T-1")).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        CreateProductRequest req = newCreateRequest("t1", "Item", "5.00", 10);
+        CreateProductRequest req = newCreateRequest("t", "1", "Item", "5.00", 10);
         req.setMinStockThreshold(5);
 
         Product result = productService.createProduct(req);
@@ -560,10 +574,10 @@ public class CatalogueCatTest {
     @Test
     @DisplayName("CAT-US8: createProduct with no threshold leaves field null")
     void createProduct_nullThresholdLeavesNull() {
-        when(productRepository.existsByProductCode("T2")).thenReturn(false);
+        when(productRepository.existsByProductCode("T-2")).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Product result = productService.createProduct(newCreateRequest("t2", "Item", "5.00", 10));
+        Product result = productService.createProduct(newCreateRequest("t", "2", "Item", "5.00", 10));
 
         assertNull(result.getMinStockThreshold());
     }
@@ -686,13 +700,17 @@ class ProductControllerCatalogueCatWebMvcTest {
     @DisplayName("POST /api/products with valid body → 200 and JSON product")
     void create_valid_returns200AndProduct() throws Exception {
         CreateProductRequest req = new CreateProductRequest();
-        req.setProductCode("SKU1");
+        req.setItemIdRange("SKU");
+        req.setItemIdSuffix("1");
         req.setDescription("Item");
+        req.setPackageType("caps");
+        req.setUnitsPerPack(10);
         req.setPrice(new BigDecimal("10.00"));
         req.setAvailabilityCount(3);
 
-        Product saved = new Product("SKU1", "Item", new BigDecimal("10.00"), 3);
+        Product saved = new Product("SKU-1", "Item", new BigDecimal("10.00"), 3);
         saved.setId(42L);
+        when(productService.createProduct(any(CreateProductRequest.class))).thenReturn(saved);
         mockMvc.perform(post("/api/products")
                         .with(user("admin").roles("ADMIN"))
                         .with(csrf())
@@ -719,6 +737,8 @@ class ProductControllerCatalogueCatWebMvcTest {
     void update_valid_returns200() throws Exception {
         UpdateProductRequest req = new UpdateProductRequest();
         req.setDescription("Updated");
+        req.setPackageType("caps");
+        req.setUnitsPerPack(1);
         req.setPrice(new BigDecimal("15.00"));
         req.setAvailabilityCount(10);
 
@@ -881,7 +901,7 @@ class ProductControllerCatalogueCatWebMvcTest {
     @DisplayName("PUT /api/products/1 with minStockThreshold=-1 → 400 Bad Request")
     void update_negativeThreshold_returns400() throws Exception {
         String body = """
-                {"description":"Test","price":5.00,"availabilityCount":10,"minStockThreshold":-1}""";
+                {"description":"Test","packageType":"caps","unitsPerPack":1,"price":5.00,"availabilityCount":10,"minStockThreshold":-1}""";
 
         mockMvc.perform(put("/api/products/1")
                         .with(user("admin").roles("ADMIN"))
@@ -896,6 +916,8 @@ class ProductControllerCatalogueCatWebMvcTest {
     void update_validThreshold_returns200() throws Exception {
         UpdateProductRequest req = new UpdateProductRequest();
         req.setDescription("Updated");
+        req.setPackageType("caps");
+        req.setUnitsPerPack(1);
         req.setPrice(new BigDecimal("10.00"));
         req.setAvailabilityCount(50);
         req.setMinStockThreshold(5);

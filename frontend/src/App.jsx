@@ -46,6 +46,7 @@ import ReportingPlaceholder from "./ReportingPlaceholder.jsx";
 import MerchantCreate from "./MerchantCreate.jsx";
 import MerchantManagement from "./MerchantManagement.jsx";
 import Invoices from "./Invoices.jsx";
+import CommercialApplication from "./CommercialApplication.jsx";
 
 /*
  * ── NAV_LABELS ───────────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ const NAV_LABELS = {
   reporting: "Reporting",
   accounts: "Accounts",
   merchants: "Merchants",
+  commercialApplication: "Commercial Application",
 };
 
 /*
@@ -82,6 +84,7 @@ const PAGE_COMPONENTS = {
   reporting: () => <ReportingPlaceholder />,
   accounts: () => <MerchantCreate />,
   merchants: () => <MerchantManagement />,
+  commercialApplication: () => <CommercialApplication />,
 };
 
 function App() {
@@ -268,7 +271,8 @@ function App() {
             >
               <thead>
                 <tr>
-                  <th>Product ID</th>
+                  <th>Range</th>
+                  <th>No.</th>
                   <th>Description</th>
                   <th>Current Stock</th>
                   <th>Threshold</th>
@@ -277,7 +281,8 @@ function App() {
               <tbody>
                 {lowStockItems.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.productCode ?? "—"}</td>
+                    <td>{p.itemIdRange ?? "—"}</td>
+                    <td>{p.itemIdSuffix ?? "—"}</td>
                     <td>{p.description}</td>
                     <td style={{ color: "#dc2626", fontWeight: 600 }}>
                       {p.availabilityCount}

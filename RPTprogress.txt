@@ -372,5 +372,12 @@ REMAINING / NOTES:
 
 
 ================================================================================
+ 8. POTENTIAL BUGS
+================================================================================
+
+The only items worth a product decision (not necessarily bugs) are: US1 “revenue received” vs invoiced totals, 
+US2 inclusion of cancelled orders, and US5 whether sold should mean DISPATCHED-only
+
+================================================================================
  END OF RPT PROGRESS REPORT
 ================================================================================

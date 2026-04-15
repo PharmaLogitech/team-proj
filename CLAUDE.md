@@ -273,15 +273,29 @@ Full status in `ACCprogress.txt` (ACC — complete), `CATprogress.txt` (CAT), `O
 
 ---
 
-## Default Bootstrap Credentials
+## Default Bootstrap Credentials (IPOS_SampleData — staff + merchants)
+
+**Staff**
 
 | Username | Password | Role |
 |----------|----------|------|
-| `admin` | `admin123` | ADMIN |
-| `manager` | `manager123` | MANAGER |
-| `merchant` | `merchant123` | MERCHANT |
+| `Sysdba` | `London_weighting` | ADMIN |
+| `accountant` | `Count_money` | ADMIN |
+| `manager` | `Get_it_done` | MANAGER |
+| `clerk` | `Paperwork` | MANAGER |
+| `warehouse1` | `Get_a_beer` | MANAGER |
+| `warehouse2` | `Lot_smell` | MANAGER |
+| `delivery` | `Too_dark` | MANAGER |
 
-Set `ipos.bootstrap.enabled=false` once real accounts exist.
+**Merchants** (synthetic email `{username}@merchant.sample.ipos`)
+
+| Username | Password | Notes |
+|----------|----------|--------|
+| `city` | `northampton` | CityPharmacy, FIXED 3%, £10,000 |
+| `cosymed` | `bondstreet` | Cosymed Ltd, FLEXIBLE tiers per PDF |
+| `hello` | `there` | HelloPharmacy, FLEXIBLE (top tier 3%) |
+
+Further merchants: **Accounts** / `POST /api/merchant-accounts`. Set `ipos.bootstrap.enabled=false` once real accounts exist.
 
 ---
 

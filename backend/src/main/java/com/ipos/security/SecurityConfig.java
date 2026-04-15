@@ -39,6 +39,7 @@
  */
 package com.ipos.security;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -49,6 +50,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
@@ -176,7 +178,9 @@ public class SecurityConfig {
      * https://docs.spring.io/spring-security/reference/servlet/architecture.html
      */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            ObjectProvider<IntegrationPuInboundApiKeyFilter> integrationPuInboundApiKeyFilter) throws Exception {
         http
             /*
              * ── CORS ─────────────────────────────────────────────────────────
@@ -223,9 +227,22 @@ public class SecurityConfig {
             .csrf(csrf -> csrf
                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-                .ignoringRequestMatchers("/api/auth/login")
-            )
+                .ignoringRequestMatchers("/api/auth/login", "/api/integration-pu/inbound/**")
+            );
 
+        /*
+         * IPOS-PU inbound integration (API key header; no browser session / CSRF).
+         * Optional: absent in some test slices that import only SecurityConfig.
+         */
+        integrationPuInboundApiKeyFilter.ifAvailable(filter -> {
+            try {
+                http.addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+
+        http
             /*
              * ── URL-LEVEL AUTHORISATION (ACC-US4 — RBAC) ────────────────────
              *
@@ -268,6 +285,16 @@ public class SecurityConfig {
 
                 /* Authenticated: session management endpoints. */
                 .requestMatchers("/api/auth/logout", "/api/auth/me").authenticated()
+
+                /*
+                 * IPOS-PU → IPOS-SA commercial applications (inbound, API key only).
+                 */
+                .requestMatchers(HttpMethod.POST, "/api/integration-pu/inbound/**").permitAll()
+
+                /*
+                 * IPOS-SA admin UI + APIs for commercial applications (IPOS-PU integration).
+                 */
+                .requestMatchers("/api/integration-pu/**").hasRole("ADMIN")
 
                 /*
                  * ── MERCHANT ACCOUNT CREATION (ACC-US1) — ADMIN only ─────────

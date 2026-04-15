@@ -29,6 +29,7 @@ import com.ipos.dto.MerchantProfileResponse;
 import com.ipos.entity.MerchantProfile;
 import com.ipos.entity.MerchantProfile.DiscountPlanType;
 import com.ipos.service.MerchantAccountService;
+import com.ipos.service.PuCommsRelayService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,9 +44,13 @@ import java.util.Map;
 public class MerchantAccountController {
 
     private final MerchantAccountService merchantAccountService;
+    private final PuCommsRelayService puCommsRelayService;
 
-    public MerchantAccountController(MerchantAccountService merchantAccountService) {
+    public MerchantAccountController(
+            MerchantAccountService merchantAccountService,
+            PuCommsRelayService puCommsRelayService) {
         this.merchantAccountService = merchantAccountService;
+        this.puCommsRelayService = puCommsRelayService;
     }
 
     /*
@@ -87,6 +92,11 @@ public class MerchantAccountController {
                     request.vatRegistrationNumber(),
                     request.paymentTermsDays()
             );
+
+            puCommsRelayService.relayNewMerchantWelcomeEmail(
+                    request.contactEmail(),
+                    request.username(),
+                    request.password());
 
             return ResponseEntity.ok(MerchantProfileResponse.fromEntity(profile));
 
