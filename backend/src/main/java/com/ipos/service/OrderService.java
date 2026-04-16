@@ -70,6 +70,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +86,7 @@ public class OrderService {
     private final InvoiceService invoiceService;
     private final InvoiceRepository invoiceRepository;
     private final IntegrationCaProperties caProperties;
+    private final StandingTransitionService standingTransitionService;
 
     public OrderService(OrderRepository orderRepository,
                         ProductRepository productRepository,
@@ -92,7 +94,8 @@ public class OrderService {
                         MerchantProfileRepository profileRepository,
                         InvoiceService invoiceService,
                         InvoiceRepository invoiceRepository,
-                        IntegrationCaProperties caProperties) {
+                        IntegrationCaProperties caProperties,
+                        StandingTransitionService standingTransitionService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
@@ -100,6 +103,7 @@ public class OrderService {
         this.invoiceService = invoiceService;
         this.invoiceRepository = invoiceRepository;
         this.caProperties = caProperties;
+        this.standingTransitionService = standingTransitionService;
     }
 
     /**
@@ -268,8 +272,18 @@ public class OrderService {
         /*
          * Step 3: Standing guard (brief §iii).
          * Only merchants with NORMAL standing can trade.  IN_DEFAULT and
-         * SUSPENDED merchants are blocked until a Manager restores them.
+         * SUSPENDED merchants are blocked.
+         *
+         * Auto-escalation: if a merchant has been IN_DEFAULT for 30+ days,
+         * automatically move them to SUSPENDED before blocking the order.
          */
+        if (profile.getStanding() == MerchantStanding.IN_DEFAULT
+                && profile.getInDefaultSince() != null
+                && Duration.between(profile.getInDefaultSince(), Instant.now()).toDays() >= 30) {
+            standingTransitionService.autoMoveToSuspended(resolvedMerchantId);
+            profile.setStanding(MerchantStanding.SUSPENDED); // reflect locally for the error message
+        }
+
         if (profile.getStanding() != MerchantStanding.NORMAL) {
             throw new RuntimeException(
                     "Your account is currently " + profile.getStanding()
@@ -373,8 +387,14 @@ public class OrderService {
         BigDecimal newExposure = existingExposure.add(totalDue);
 
         if (newExposure.compareTo(profile.getCreditLimit()) > 0) {
+            /*
+             * Credit limit breached — automatically move the merchant to IN_DEFAULT.
+             * Uses REQUIRES_NEW transaction so this commits even though the outer
+             * transaction (the order itself) is about to be rolled back.
+             */
+            standingTransitionService.autoMoveToInDefault(resolvedMerchantId);
             throw new RuntimeException(
-                    "Order would exceed credit limit. "
+                    "Order would exceed credit limit. Your account has been placed IN DEFAULT. "
                     + "Current net exposure: £" + existingExposure.setScale(2, RoundingMode.HALF_UP)
                     + " (orders £" + grossOrderExposure.setScale(2, RoundingMode.HALF_UP)
                     + " − payments £" + paymentsReceived.setScale(2, RoundingMode.HALF_UP)

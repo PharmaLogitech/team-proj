@@ -17,9 +17,11 @@
 package com.ipos.service;
 
 import com.ipos.entity.Invoice;
+import com.ipos.entity.MerchantProfile;
 import com.ipos.entity.Payment;
 import com.ipos.entity.User;
 import com.ipos.repository.InvoiceRepository;
+import com.ipos.repository.MerchantProfileRepository;
 import com.ipos.repository.PaymentRepository;
 import com.ipos.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -36,13 +38,16 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final InvoiceRepository invoiceRepository;
     private final UserRepository userRepository;
+    private final MerchantProfileRepository profileRepository;
 
     public PaymentService(PaymentRepository paymentRepository,
                           InvoiceRepository invoiceRepository,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          MerchantProfileRepository profileRepository) {
         this.paymentRepository = paymentRepository;
         this.invoiceRepository = invoiceRepository;
         this.userRepository = userRepository;
+        this.profileRepository = profileRepository;
     }
 
     /**
@@ -86,6 +91,31 @@ public class PaymentService {
         payment.setRecordedAt(Instant.now());
         payment.setRecordedBy(admin);
 
-        return paymentRepository.save(payment);
+        Payment saved = paymentRepository.save(payment);
+
+        /*
+         * ACC-US5: Auto-restore to NORMAL if the merchant is IN_DEFAULT and the
+         * payment brings their net outstanding balance within the credit limit.
+         * Outstanding = total invoiced − total paid (across all invoices).
+         */
+        profileRepository.findByUserId(invoice.getMerchant().getId()).ifPresent(profile -> {
+            if (profile.getStanding() == MerchantProfile.MerchantStanding.IN_DEFAULT) {
+                BigDecimal totalInvoiced = invoiceRepository.sumTotalDueByMerchantId(
+                        invoice.getMerchant().getId());
+                BigDecimal totalPaid = invoiceRepository.sumPaymentsByMerchantId(
+                        invoice.getMerchant().getId());
+                BigDecimal netOutstanding = totalInvoiced.subtract(totalPaid);
+                if (netOutstanding.compareTo(BigDecimal.ZERO) < 0) {
+                    netOutstanding = BigDecimal.ZERO;
+                }
+                if (netOutstanding.compareTo(new BigDecimal("0.01")) < 0) {
+                    profile.setStanding(MerchantProfile.MerchantStanding.NORMAL);
+                    profile.setInDefaultSince(null);
+                    profileRepository.save(profile);
+                }
+            }
+        });
+
+        return saved;
     }
 }
