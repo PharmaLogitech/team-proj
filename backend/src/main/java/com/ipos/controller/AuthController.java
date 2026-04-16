@@ -38,7 +38,9 @@ package com.ipos.controller;
 
 import com.ipos.dto.LoginRequest;
 import com.ipos.dto.UserResponse;
+import com.ipos.entity.MerchantProfile;
 import com.ipos.entity.User;
+import com.ipos.repository.MerchantProfileRepository;
 import com.ipos.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -64,11 +66,23 @@ public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
+    private final MerchantProfileRepository merchantProfileRepository;
 
     public AuthController(AuthenticationManager authenticationManager,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          MerchantProfileRepository merchantProfileRepository) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
+        this.merchantProfileRepository = merchantProfileRepository;
+    }
+
+    private UserResponse buildUserResponse(User user) {
+        if (user.getRole() == User.Role.MERCHANT) {
+            return merchantProfileRepository.findByUserId(user.getId())
+                    .map(profile -> UserResponse.fromEntity(user, profile.getDebtReminderOutstanding()))
+                    .orElse(UserResponse.fromEntity(user));
+        }
+        return UserResponse.fromEntity(user);
     }
 
     /*
@@ -148,7 +162,7 @@ public class AuthController {
             User user = userRepository.findByUsername(authentication.getName())
                     .orElseThrow(() -> new RuntimeException("User not found after authentication"));
 
-            return ResponseEntity.ok(UserResponse.fromEntity(user));
+            return ResponseEntity.ok(buildUserResponse(user));
 
         } catch (AuthenticationException e) {
             /*
@@ -226,6 +240,6 @@ public class AuthController {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found in database"));
 
-        return ResponseEntity.ok(UserResponse.fromEntity(user));
+        return ResponseEntity.ok(buildUserResponse(user));
     }
 }

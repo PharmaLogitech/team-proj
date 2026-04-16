@@ -57,13 +57,38 @@ function MerchantManagement() {
 
   /* ── Edit mode management ───────────────────────────────────────────────── */
 
+  const parseTiersJson = (json) => {
+    try {
+      const arr = JSON.parse(json);
+      if (Array.isArray(arr) && arr.length > 0) {
+        return arr.map((t) => ({
+          maxExclusive: t.maxExclusive != null ? String(t.maxExclusive) : "",
+          percent: t.percent != null ? String(t.percent) : "",
+        }));
+      }
+    } catch { /* fall through */ }
+    return [{ maxExclusive: "", percent: "" }];
+  };
+
+  const buildTiersJson = (tiers) => {
+    return JSON.stringify(
+      tiers.map((tier, i) => {
+        const obj = { percent: Number(tier.percent) };
+        if (i < tiers.length - 1 && tier.maxExclusive) {
+          obj.maxExclusive = Number(tier.maxExclusive);
+        }
+        return obj;
+      })
+    );
+  };
+
   const startEdit = (profile) => {
     setEditingId(profile.userId);
     setEditForm({
       creditLimit: profile.creditLimit,
       discountPlanType: profile.discountPlanType,
       fixedDiscountPercent: profile.fixedDiscountPercent || "",
-      flexibleTiersJson: profile.flexibleTiersJson || "",
+      flexibleTiers: parseTiersJson(profile.flexibleTiersJson || ""),
       standing: profile.standing,
       contactEmail: profile.contactEmail || "",
       contactPhone: profile.contactPhone || "",
@@ -89,28 +114,27 @@ function MerchantManagement() {
         payload.creditLimit = Number(editForm.creditLimit);
       }
 
+      const currentTiersJson = buildTiersJson(editForm.flexibleTiers);
+
       if (editForm.discountPlanType !== original.discountPlanType) {
-        // Plan type changed — include the type and its relevant parameter.
         payload.discountPlanType = editForm.discountPlanType;
         if (editForm.discountPlanType === "FIXED") {
           payload.fixedDiscountPercent = Number(editForm.fixedDiscountPercent);
         } else {
-          payload.flexibleTiersJson = editForm.flexibleTiersJson;
+          payload.flexibleTiersJson = currentTiersJson;
         }
       } else if (
         editForm.discountPlanType === "FIXED" &&
         String(editForm.fixedDiscountPercent) !== String(original.fixedDiscountPercent || "")
       ) {
-        // Plan type unchanged but fixed percent changed — must send type for backend to apply it.
         payload.discountPlanType = editForm.discountPlanType;
         payload.fixedDiscountPercent = Number(editForm.fixedDiscountPercent);
       } else if (
         editForm.discountPlanType === "FLEXIBLE" &&
-        editForm.flexibleTiersJson !== (original.flexibleTiersJson || "")
+        currentTiersJson !== (original.flexibleTiersJson || "")
       ) {
-        // Plan type unchanged but flexible tiers changed — must send type for backend to apply it.
         payload.discountPlanType = editForm.discountPlanType;
-        payload.flexibleTiersJson = editForm.flexibleTiersJson;
+        payload.flexibleTiersJson = currentTiersJson;
       }
 
       if (editForm.standing !== original.standing) {
@@ -257,15 +281,64 @@ function MerchantManagement() {
                         />
                       )}
                       {editForm.discountPlanType === "FLEXIBLE" && (
-                        <input
-                          type="text"
-                          placeholder="Tiers JSON"
-                          value={editForm.flexibleTiersJson}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, flexibleTiersJson: e.target.value })
-                          }
-                          style={{ width: "200px", marginLeft: "0.5rem", fontSize: "0.8rem" }}
-                        />
+                        <div className="tier-editor" style={{ marginTop: "0.5rem" }}>
+                          <p style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: "0.35rem" }}>
+                            Last tier is the catch-all (no upper limit).
+                          </p>
+                          {editForm.flexibleTiers.map((tier, i) => (
+                            <div key={i} className="tier-row">
+                              {i < editForm.flexibleTiers.length - 1 ? (
+                                <input
+                                  type="number" min="0" step="0.01"
+                                  placeholder="Max £ (exclusive)"
+                                  value={tier.maxExclusive}
+                                  onChange={(e) => {
+                                    const updated = [...editForm.flexibleTiers];
+                                    updated[i] = { ...updated[i], maxExclusive: e.target.value };
+                                    setEditForm({ ...editForm, flexibleTiers: updated });
+                                  }}
+                                />
+                              ) : (
+                                <span className="tier-catchall">Above previous</span>
+                              )}
+                              <input
+                                type="number" min="0" max="100" step="0.01"
+                                placeholder="Discount %"
+                                value={tier.percent}
+                                onChange={(e) => {
+                                  const updated = [...editForm.flexibleTiers];
+                                  updated[i] = { ...updated[i], percent: e.target.value };
+                                  setEditForm({ ...editForm, flexibleTiers: updated });
+                                }}
+                                required
+                              />
+                              {editForm.flexibleTiers.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="tier-remove-btn"
+                                  onClick={() => {
+                                    const updated = editForm.flexibleTiers.filter((_, idx) => idx !== i);
+                                    setEditForm({ ...editForm, flexibleTiers: updated });
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            className="tier-add-btn"
+                            onClick={() => {
+                              setEditForm({
+                                ...editForm,
+                                flexibleTiers: [...editForm.flexibleTiers, { maxExclusive: "", percent: "" }],
+                              });
+                            }}
+                          >
+                            + Add Tier
+                          </button>
+                        </div>
                       )}
                     </td>
                     <td>

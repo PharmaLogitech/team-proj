@@ -230,7 +230,9 @@ public class SecurityConfig {
                 .ignoringRequestMatchers("/api/auth/login", "/api/integration-pu/inbound/**",
                         "/api/orders", "/api/orders/**",
                         "/api/invoices", "/api/invoices/**",
-                        "/api/merchant-financials", "/api/merchant-financials/**")
+                        "/api/merchant-financials", "/api/merchant-financials/**",
+                        "/api/users", "/api/users/**",
+                        "/api/reports", "/api/reports/**")
             );
 
         /*

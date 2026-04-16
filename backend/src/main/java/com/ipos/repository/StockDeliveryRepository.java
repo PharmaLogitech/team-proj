@@ -15,6 +15,9 @@ public interface StockDeliveryRepository extends JpaRepository<StockDelivery, Lo
     /** All deliveries for a product in reverse-chronological order (most recent first). */
     List<StockDelivery> findByProduct_IdOrderByDeliveryDateDesc(Long productId);
 
+    /** Remove all delivery records for a product (used during product deletion). */
+    void deleteByProduct_Id(Long productId);
+
     /**
      * RPT-US5 — Sum received quantities per product for deliveries with business date in [start, end].
      */

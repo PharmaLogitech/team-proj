@@ -241,6 +241,7 @@ public class ProductService {
         log.setDeletedAt(Instant.now());
         productDeletionLogRepository.save(log);
 
+        stockDeliveryRepository.deleteByProduct_Id(id);
         productRepository.delete(product);
     }
 }

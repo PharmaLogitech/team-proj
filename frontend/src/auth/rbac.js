@@ -118,6 +118,7 @@ const ROUTE_PACKAGES = {
   invoices: PACKAGE_ORD,
   reporting: PACKAGE_RPRT,
   accounts: PACKAGE_ACC,
+  staffAccounts: PACKAGE_ACC,
   merchants: PACKAGE_MER,
   commercialApplication: PACKAGE_PU,
 };

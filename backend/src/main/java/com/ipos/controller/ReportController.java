@@ -30,6 +30,7 @@ import com.ipos.service.ProductService;
 import com.ipos.service.ReportingService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -115,5 +116,15 @@ public class ReportController {
             @RequestParam LocalDate start,
             @RequestParam LocalDate end) {
         return reportingService.getMerchantActivityReport(merchantId, start, end);
+    }
+
+    /**
+     * POST /api/reports/generate-debtor-reminders — Flags all merchants with
+     * outstanding balances so they see a warning banner on next login.
+     * MANAGER/ADMIN via /api/reports/** security rule.
+     */
+    @PostMapping("/generate-debtor-reminders")
+    public ReportingService.DebtorReminderSummary generateDebtorReminders() {
+        return reportingService.generateDebtorReminders();
     }
 }

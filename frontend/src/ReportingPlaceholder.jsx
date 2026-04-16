@@ -17,6 +17,7 @@ import {
   getMerchantOrderHistory,
   getMerchantActivityReport,
   getMerchantProfiles,
+  generateDebtorReminders,
 } from "./api.js";
 
 function defaultDateRange() {
@@ -79,6 +80,10 @@ function ReportingPlaceholder() {
   const [stockTurnover, setStockTurnover] = useState(null);
   const [stoLoading, setStoLoading] = useState(false);
   const [stoError, setStoError] = useState(null);
+
+  const [debtLoading, setDebtLoading] = useState(false);
+  const [debtResult, setDebtResult] = useState(null);
+  const [debtError, setDebtError] = useState(null);
 
   const fetchLowStock = useCallback(async () => {
     setLowStockLoading(true);
@@ -186,6 +191,20 @@ function ReportingPlaceholder() {
       setGiError(err.message || "Failed to load global invoice report.");
     } finally {
       setGiLoading(false);
+    }
+  };
+
+  const runDebtorReminders = async () => {
+    setDebtLoading(true);
+    setDebtError(null);
+    setDebtResult(null);
+    try {
+      const data = await generateDebtorReminders();
+      setDebtResult(data);
+    } catch (err) {
+      setDebtError(err.message || "Failed to generate debtor reminders.");
+    } finally {
+      setDebtLoading(false);
     }
   };
 
@@ -611,6 +630,7 @@ function ReportingPlaceholder() {
       {/* ── Stock Turnover ─────────────────────────────────────────────── */}
       <section style={{ marginTop: "2rem" }}>
         <h3 style={{ marginBottom: "0.75rem" }}>Stock Turnover</h3>
+
         <div
           className="no-print"
           style={{
@@ -669,6 +689,65 @@ function ReportingPlaceholder() {
             </table>
             {(stockTurnover.rows || []).length === 0 && (
               <p style={{ marginTop: "0.5rem", color: "#6b7280" }}>No sales or deliveries in this period.</p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ── Generate Debtor Reminders ──────────────────────────────────── */}
+      <section style={{ marginTop: "2rem", paddingTop: "1.5rem", borderTop: "1px solid #e5e7eb" }}>
+        <h3 style={{ marginBottom: "0.75rem" }}>Generate Debtor Reminders</h3>
+        <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "1rem" }}>
+          Identifies all merchant accounts with outstanding balances and flags them.
+          The next time a flagged merchant logs in, they will see a warning banner
+          showing the amount they owe.
+        </p>
+        <button
+          type="button"
+          onClick={runDebtorReminders}
+          disabled={debtLoading}
+          className="submit-btn"
+        >
+          {debtLoading ? "Generating…" : "Generate Reminders"}
+        </button>
+
+        {debtError && (
+          <p className="status-message error" style={{ color: "#dc2626", marginTop: "0.75rem" }}>
+            {debtError}
+          </p>
+        )}
+
+        {debtResult && (
+          <div style={{ marginTop: "1rem" }}>
+            <p className="status-message success" style={{ marginBottom: "0.75rem" }}>
+              {debtResult.merchantsFlagged === 0
+                ? "No merchants have outstanding balances. All reminders have been cleared."
+                : `${debtResult.merchantsFlagged} merchant(s) flagged with outstanding balances.`}
+            </p>
+
+            {debtResult.merchants && debtResult.merchants.length > 0 && (
+              <table className="product-table">
+                <thead>
+                  <tr>
+                    <th>Merchant ID</th>
+                    <th>Name</th>
+                    <th>Username</th>
+                    <th>Outstanding Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {debtResult.merchants.map((m) => (
+                    <tr key={m.merchantId}>
+                      <td>{m.merchantId}</td>
+                      <td>{m.name ?? "—"}</td>
+                      <td>{m.username ?? "—"}</td>
+                      <td style={{ color: "#dc2626", fontWeight: 600 }}>
+                        {formatMoney(m.outstanding)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         )}

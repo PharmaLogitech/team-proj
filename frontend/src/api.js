@@ -371,7 +371,26 @@ export async function createUser(user) {
     body: JSON.stringify(user),
   });
   if (!response.ok) {
-    throw new Error("Failed to create user");
+    const body = await parseResponseBody(response);
+    throw new Error(errorMessageFromBody(body, response));
+  }
+  return response.json();
+}
+
+/**
+ * Update an existing user's role (ADMIN ↔ MANAGER only).
+ * PUT /api/users/{id}/role with JSON body { "role": "ADMIN" | "MANAGER" }.
+ *
+ * ACCESS: ADMIN only (IPOS-SA-ACC).
+ */
+export async function updateUserRole(userId, role) {
+  const response = await fetchWithAuth(`${API_BASE}/users/${userId}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ role }),
+  });
+  if (!response.ok) {
+    const body = await parseResponseBody(response);
+    throw new Error(errorMessageFromBody(body, response));
   }
   return response.json();
 }
@@ -621,6 +640,17 @@ export async function rejectCommercialApplication(id, reason) {
   const response = await fetchWithAuth(`${API_BASE}/integration-pu/applications/${id}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason }),
+  });
+  const data = await parseResponseBody(response);
+  if (!response.ok) {
+    throw new Error(errorMessageFromBody(data, response));
+  }
+  return data;
+}
+
+export async function generateDebtorReminders() {
+  const response = await fetchWithAuth(`${API_BASE}/reports/generate-debtor-reminders`, {
+    method: "POST",
   });
   const data = await parseResponseBody(response);
   if (!response.ok) {

@@ -30,6 +30,8 @@ package com.ipos.dto;
 
 import com.ipos.entity.User;
 
+import java.math.BigDecimal;
+
 /*
  * Record fields:
  *   id       — The database primary key.  The frontend uses this to identify
@@ -39,26 +41,36 @@ import com.ipos.entity.User;
  *   role     — The user's role as a string ("ADMIN", "MANAGER", "MERCHANT").
  *              The frontend uses this to decide which navigation items to show
  *              (see frontend/src/auth/rbac.js for the access matrix).
+ *   debtReminderOutstanding — For MERCHANT users: the outstanding balance
+ *              snapshot from "Generate Debtor Reminders". null for non-merchants
+ *              or when no reminder is active.
  */
-public record UserResponse(Long id, String name, String username, String role) {
+public record UserResponse(Long id, String name, String username, String role,
+                           BigDecimal debtReminderOutstanding) {
 
-    /*
-     * Factory method to convert a User entity into a safe UserResponse.
-     *
-     * This is the ONLY place where entity → DTO conversion happens for auth
-     * responses.  Having a single conversion point means:
-     *   - If we add a field to UserResponse, we update ONE place.
-     *   - If we rename a User field, we update ONE place.
-     *
-     * @param user  The User entity loaded from the database.
-     * @return      A UserResponse with no sensitive data (no password hash).
+    /**
+     * Factory method for non-merchant users (no debt reminder data).
      */
     public static UserResponse fromEntity(User user) {
         return new UserResponse(
                 user.getId(),
                 user.getName(),
                 user.getUsername(),
-                user.getRole().name()
+                user.getRole().name(),
+                null
+        );
+    }
+
+    /**
+     * Factory method that includes debt reminder data (used for MERCHANT users).
+     */
+    public static UserResponse fromEntity(User user, BigDecimal debtReminderOutstanding) {
+        return new UserResponse(
+                user.getId(),
+                user.getName(),
+                user.getUsername(),
+                user.getRole().name(),
+                debtReminderOutstanding
         );
     }
 }

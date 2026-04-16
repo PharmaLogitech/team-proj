@@ -126,6 +126,47 @@ public class UserService {
     }
 
     /*
+     * ── UPDATE USER ROLE ─────────────────────────────────────────────────────
+     *
+     * Changes an existing user's role.  Only ADMIN ↔ MANAGER transitions
+     * are permitted from the Staff Accounts screen.
+     *
+     * Guards:
+     *   - newRole must be ADMIN or MANAGER (MERCHANT is rejected).
+     *   - If the existing user is a MERCHANT, the change is rejected to
+     *     prevent orphaning the associated MerchantProfile.
+     *   - No-op if the user already has the requested role.
+     *
+     * @param userId  The ID of the user to update.
+     * @param newRole The target role (ADMIN or MANAGER only).
+     * @return        The updated User entity.
+     * @throws RuntimeException if the user is not found or the transition is invalid.
+     */
+    public User updateUserRole(Long userId, User.Role newRole) {
+        if (newRole == User.Role.MERCHANT) {
+            throw new RuntimeException(
+                    "Cannot assign MERCHANT role from this screen. "
+                    + "Use the Merchant Account creation endpoint instead.");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User with ID " + userId + " not found."));
+
+        if (user.getRole() == User.Role.MERCHANT) {
+            throw new RuntimeException(
+                    "Merchant roles cannot be changed from this screen. "
+                    + "Use Merchant Management instead.");
+        }
+
+        if (user.getRole() == newRole) {
+            return user;
+        }
+
+        user.setRole(newRole);
+        return userRepository.save(user);
+    }
+
+    /*
      * Raw save — used internally (e.g., DataBootstrap) when the password
      * is already hashed.  Controllers should use createUser() instead.
      */

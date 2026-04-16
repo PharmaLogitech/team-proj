@@ -48,6 +48,7 @@ import MerchantManagement from "./MerchantManagement.jsx";
 import Invoices from "./Invoices.jsx";
 import CommercialApplication from "./CommercialApplication.jsx";
 import TrackMerchantOrders from "./TrackMerchantOrders.jsx";
+import StaffAccounts from "./StaffAccounts.jsx";
 
 /*
  * ── NAV_LABELS ───────────────────────────────────────────────────────────────
@@ -62,6 +63,7 @@ const NAV_LABELS = {
   invoices: "Invoices",
   reporting: "Reporting",
   accounts: "Accounts",
+  staffAccounts: "Staff Accounts",
   merchants: "Merchants",
   commercialApplication: "Commercial Application",
 };
@@ -88,6 +90,7 @@ const PAGE_COMPONENTS = {
   invoices: () => <Invoices />,
   reporting: () => <ReportingPlaceholder />,
   accounts: () => <MerchantCreate />,
+  staffAccounts: () => <StaffAccounts />,
   merchants: () => <MerchantManagement />,
   commercialApplication: () => <CommercialApplication />,
 };
@@ -298,6 +301,24 @@ function App() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* ── Merchant Debt Reminder Banner ──────────────────────────────── */}
+      {user.role === "MERCHANT" && user.debtReminderOutstanding != null && Number(user.debtReminderOutstanding) > 0 && (
+        <div
+          style={{
+            background: "#fef2f2",
+            borderBottom: "2px solid #dc2626",
+            padding: "0.75rem 1.5rem",
+            fontSize: "0.9rem",
+            color: "#991b1b",
+          }}
+        >
+          <strong>Payment reminder:</strong>{" "}
+          You have an outstanding balance of{" "}
+          <strong>£{Number(user.debtReminderOutstanding).toFixed(2)}</strong>.
+          Please arrange payment.
         </div>
       )}
 

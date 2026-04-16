@@ -229,6 +229,15 @@ public class MerchantProfile {
     @Column(name = "cheque_rebate_pending", precision = 12, scale = 2, nullable = false)
     private BigDecimal chequeRebatePending = BigDecimal.ZERO;
 
+    // ── Debtor Reminder (RPT — Generate Debtor Reminders) ─────────────────
+
+    /**
+     * Outstanding balance snapshot written by "Generate Debtor Reminders".
+     * null = no active reminder; > 0 = merchant sees a warning banner on login.
+     */
+    @Column(name = "debt_reminder_outstanding", precision = 12, scale = 2)
+    private BigDecimal debtReminderOutstanding;
+
     // ── Enums ────────────────────────────────────────────────────────────────
 
     /*
@@ -402,5 +411,13 @@ public class MerchantProfile {
 
     public void setInDefaultSince(Instant inDefaultSince) {
         this.inDefaultSince = inDefaultSince;
+    }
+
+    public BigDecimal getDebtReminderOutstanding() {
+        return debtReminderOutstanding;
+    }
+
+    public void setDebtReminderOutstanding(BigDecimal debtReminderOutstanding) {
+        this.debtReminderOutstanding = debtReminderOutstanding;
     }
 }

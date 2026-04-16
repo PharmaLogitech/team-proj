@@ -33,7 +33,9 @@ import com.ipos.entity.User;
 import com.ipos.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -118,6 +120,48 @@ public class UserController {
             }
 
             User user = userService.createUser(name, username, password, role);
+            return ResponseEntity.ok(UserResponse.fromEntity(user));
+
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /*
+     * PUT /api/users/{id}/role → Changes a user's role.
+     *
+     * SECURITY: ADMIN only (enforced by SecurityConfig).
+     *
+     * Expected JSON body:
+     * {
+     *   "role": "ADMIN"   // or "MANAGER"
+     * }
+     *
+     * Only ADMIN ↔ MANAGER transitions are allowed.  MERCHANT users cannot
+     * be changed from this endpoint (they have an associated MerchantProfile),
+     * and assigning the MERCHANT role is also rejected.
+     */
+    @PutMapping("/{id}/role")
+    public ResponseEntity<?> updateRole(@PathVariable Long id,
+                                        @RequestBody Map<String, String> body) {
+        try {
+            String roleStr = body.get("role");
+
+            if (roleStr == null || roleStr.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Role is required (ADMIN or MANAGER)."));
+            }
+
+            User.Role role;
+            try {
+                role = User.Role.valueOf(roleStr.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error",
+                                "Invalid role: '" + roleStr + "'. Must be ADMIN or MANAGER."));
+            }
+
+            User user = userService.updateUserRole(id, role);
             return ResponseEntity.ok(UserResponse.fromEntity(user));
 
         } catch (RuntimeException e) {

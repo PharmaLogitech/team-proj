@@ -349,4 +349,40 @@ public class ReportingService {
         }
         return PAYMENT_PARTIAL;
     }
+
+    /**
+     * Generate debtor reminders: for every merchant, compute outstanding balance
+     * and persist it on MerchantProfile so the merchant sees a warning on login.
+     *
+     * @return summary DTO with the count of merchants flagged and their details.
+     */
+    @Transactional
+    public DebtorReminderSummary generateDebtorReminders() {
+        List<MerchantProfile> profiles = merchantProfileRepository.findAll();
+        List<DebtorReminderRow> flagged = new ArrayList<>();
+
+        for (MerchantProfile profile : profiles) {
+            Long merchantId = profile.getUser().getId();
+            BigDecimal totalInvoiced = invoiceRepository.sumTotalDueByMerchantId(merchantId);
+            BigDecimal totalPaid = invoiceRepository.sumPaymentsByMerchantId(merchantId);
+            BigDecimal outstanding = totalInvoiced.subtract(totalPaid);
+
+            if (outstanding.compareTo(BigDecimal.ZERO) > 0) {
+                profile.setDebtReminderOutstanding(outstanding);
+                flagged.add(new DebtorReminderRow(
+                        merchantId,
+                        profile.getUser().getName(),
+                        profile.getUser().getUsername(),
+                        outstanding));
+            } else {
+                profile.setDebtReminderOutstanding(null);
+            }
+            merchantProfileRepository.save(profile);
+        }
+
+        return new DebtorReminderSummary(flagged.size(), flagged);
+    }
+
+    public record DebtorReminderRow(Long merchantId, String name, String username, BigDecimal outstanding) {}
+    public record DebtorReminderSummary(int merchantsFlagged, List<DebtorReminderRow> merchants) {}
 }
