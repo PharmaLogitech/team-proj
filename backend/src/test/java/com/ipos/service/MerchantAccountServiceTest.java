@@ -112,7 +112,8 @@ public class MerchantAccountServiceTest {
                 orderRepository, productRepository, userRepository, profileRepository,
                 mock(InvoiceService.class),
                 invoiceRepository,
-                new IntegrationCaProperties());
+                new IntegrationCaProperties(),
+                mock(com.ipos.service.StandingTransitionService.class));
         lenient().when(invoiceRepository.sumPaymentsByMerchantId(anyLong())).thenReturn(BigDecimal.ZERO);
 
         userService = new UserService(userRepository, passwordEncoder);

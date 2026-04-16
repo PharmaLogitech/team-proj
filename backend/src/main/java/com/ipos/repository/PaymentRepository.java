@@ -16,6 +16,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 @Repository
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
@@ -24,4 +25,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p " +
            "WHERE p.invoice.id = :invoiceId")
     BigDecimal sumByInvoiceId(@Param("invoiceId") Long invoiceId);
+
+    /**
+     * Sum of all payments recorded for a merchant's invoices on or after a given
+     * timestamp.  Used to check whether a payment has been made since the
+     * merchant went into default (ACC-US5).
+     */
+    @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p " +
+           "WHERE p.invoice.merchant.id = :merchantId AND p.recordedAt >= :since")
+    BigDecimal sumPaymentsByMerchantIdSince(@Param("merchantId") Long merchantId,
+                                            @Param("since") Instant since);
 }

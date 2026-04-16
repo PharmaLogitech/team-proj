@@ -219,12 +219,13 @@ class PaymentServiceTest {
     @Mock private PaymentRepository paymentRepository;
     @Mock private InvoiceRepository invoiceRepository;
     @Mock private UserRepository userRepository;
+    @Mock private MerchantProfileRepository merchantProfileRepository;
 
     private PaymentService paymentService;
 
     @BeforeEach
     void setUp() {
-        paymentService = new PaymentService(paymentRepository, invoiceRepository, userRepository);
+        paymentService = new PaymentService(paymentRepository, invoiceRepository, userRepository, merchantProfileRepository);
     }
 
     private Invoice sampleInvoice() {

@@ -42,6 +42,8 @@ import com.ipos.security.SecurityConfig;
 import com.ipos.config.IntegrationCaProperties;
 import com.ipos.service.InvoiceService;
 import com.ipos.service.OrderService;
+import com.ipos.service.StandingTransitionService;
+import static org.mockito.Mockito.mock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -99,7 +101,8 @@ public class ORDOrderTest {
                 orderRepository, productRepository, userRepository, profileRepository,
                 invoiceService,
                 invoiceRepository,
-                new IntegrationCaProperties());
+                new IntegrationCaProperties(),
+                mock(StandingTransitionService.class));
     }
 
     /* ── helpers ────────────────────────────────────────────────────────────── */

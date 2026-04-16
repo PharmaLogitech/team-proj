@@ -37,6 +37,7 @@ import com.ipos.entity.MonthlyRebateSettlement.SettlementMode;
 import com.ipos.entity.StandingChangeLog;
 import com.ipos.entity.User;
 import com.ipos.repository.MerchantProfileRepository;
+import com.ipos.repository.PaymentRepository;
 import com.ipos.repository.StandingChangeLogRepository;
 import com.ipos.repository.UserRepository;
 import com.ipos.service.MerchantAccountService;
@@ -53,7 +54,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
@@ -68,15 +68,18 @@ public class MerchantProfileController {
     private final MerchantAccountService merchantAccountService;
     private final StandingChangeLogRepository standingChangeLogRepository;
     private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
 
     public MerchantProfileController(MerchantProfileRepository profileRepository,
                                      MerchantAccountService merchantAccountService,
                                      StandingChangeLogRepository standingChangeLogRepository,
-                                     UserRepository userRepository) {
+                                     UserRepository userRepository,
+                                     PaymentRepository paymentRepository) {
         this.profileRepository = profileRepository;
         this.merchantAccountService = merchantAccountService;
         this.standingChangeLogRepository = standingChangeLogRepository;
         this.userRepository = userRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     /* GET /api/merchant-profiles → List all merchant profiles as DTOs. */
@@ -233,18 +236,22 @@ public class MerchantProfileController {
                     }
 
                     /*
-                     * ACC-US5: 30-day rule — "long-term payment issue (e.g. longer
-                     * than 30 days without payment)."  The Manager can only restore
-                     * if the merchant has been in default for at least 30 days.
+                     * ACC-US5: "only if payment made" — the Manager can only restore
+                     * a merchant from IN_DEFAULT to NORMAL if at least one payment
+                     * has been recorded against their invoices since they went into default.
                      */
-                    if (profile.getInDefaultSince() != null) {
-                        long daysInDefault = Duration.between(
-                                profile.getInDefaultSince(), Instant.now()).toDays();
-                        if (daysInDefault < 30) {
+                    if (newStanding == MerchantStanding.NORMAL
+                            && profile.getInDefaultSince() != null) {
+                        java.math.BigDecimal paidSinceDefault =
+                                paymentRepository.sumPaymentsByMerchantIdSince(
+                                        profile.getUser().getId(),
+                                        profile.getInDefaultSince());
+                        if (paidSinceDefault.compareTo(java.math.BigDecimal.ZERO) <= 0) {
                             return ResponseEntity.badRequest()
                                     .body(Map.of("error",
-                                            "Account has only been in default for " + daysInDefault
-                                            + " days. The minimum is 30 days before the standing can be changed."));
+                                            "Cannot restore to NORMAL: no payment has been recorded "
+                                            + "since the account went into default on "
+                                            + profile.getInDefaultSince().toString().substring(0, 10) + "."));
                         }
                     }
 
